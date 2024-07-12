@@ -7,30 +7,30 @@ use std::process::Command;
 pub struct AwsCmdCredentialProvider {}
 
 #[derive(Debug)]
-pub enum Error {
+pub enum ProviderAwsCmdError {
     CommandFailed(std::io::Error),
     CommandExecFailed(String),
     InvalidCommandOutput(serde_json::Error),
 }
 
-impl std::fmt::Display for Error {
+impl std::fmt::Display for ProviderAwsCmdError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::CommandFailed(err) => writeln!(f, "Command failed: {}", err),
-            Error::CommandExecFailed(stderr) => {
+            ProviderAwsCmdError::CommandFailed(err) => writeln!(f, "Command failed: {}", err),
+            ProviderAwsCmdError::CommandExecFailed(stderr) => {
                 writeln!(f, "Command execution failed due to {}", stderr)
             }
-            Error::InvalidCommandOutput(err) => {
+            ProviderAwsCmdError::InvalidCommandOutput(err) => {
                 writeln!(f, "Serde failed to parse stdout to credentials: {}", err)
             }
         }
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for ProviderAwsCmdError {}
 
 impl ProvideCredentials for AwsCmdCredentialProvider {
-    type Error = Error;
+    type Error = ProviderAwsCmdError;
     async fn provide_credentials(
         &self,
         input: &super::ProvideCredentialsInput,
@@ -56,15 +56,16 @@ impl ProvideCredentials for AwsCmdCredentialProvider {
             .arg("--output")
             .arg("json")
             .output()
-            .map_err(Error::CommandFailed)?;
+            .map_err(ProviderAwsCmdError::CommandFailed)?;
 
         let stderr = String::from_utf8_lossy(&aws_sso_cmd.stderr);
         let stdout = String::from_utf8_lossy(&aws_sso_cmd.stdout);
 
         if !aws_sso_cmd.status.success() {
-            return Err(Error::CommandExecFailed(stderr.to_string()));
+            return Err(ProviderAwsCmdError::CommandExecFailed(stderr.to_string()));
         }
 
-        serde_json::from_str::<K8sExecCredentials>(&stdout).map_err(Error::InvalidCommandOutput)
+        serde_json::from_str::<K8sExecCredentials>(&stdout)
+            .map_err(ProviderAwsCmdError::InvalidCommandOutput)
     }
 }

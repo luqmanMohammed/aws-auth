@@ -11,23 +11,23 @@ pub struct Arguments {
 }
 
 #[derive(Debug)]
-pub enum Error {
+pub enum CmdError {
     MissingArgument(String),
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for CmdError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::MissingArgument(argument) => {
+            CmdError::MissingArgument(argument) => {
                 writeln!(f, "Missing required argument: --{}", argument)
             }
         }
     }
 }
-impl std::error::Error for Error {}
+impl std::error::Error for CmdError {}
 
 impl TryFrom<Vec<String>> for Arguments {
-    type Error = Error;
+    type Error = CmdError;
     fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
         let mut arg_map: HashMap<String, String> = HashMap::new();
         let mut key: Option<String> = None;
@@ -42,10 +42,10 @@ impl TryFrom<Vec<String>> for Arguments {
         fn safe_get_arg<'a>(
             arg_map: &'a HashMap<String, String>,
             arg: &str,
-        ) -> Result<&'a String, Error> {
+        ) -> Result<&'a String, CmdError> {
             arg_map
                 .get(arg)
-                .ok_or_else(|| Error::MissingArgument(arg.to_string()))
+                .ok_or_else(|| CmdError::MissingArgument(arg.to_string()))
         }
 
         Ok(Arguments {
@@ -63,7 +63,7 @@ impl TryFrom<Vec<String>> for Arguments {
 }
 
 impl Arguments {
-    pub fn from_env_args() -> Result<Arguments, Error> {
+    pub fn from_env_args() -> Result<Arguments, CmdError> {
         Arguments::try_from(env::args().collect::<Vec<_>>()[1..].to_vec())
     }
 }

@@ -1,5 +1,5 @@
 pub mod aws_cmd;
-// mod aws_sso;
+pub mod aws_sso;
 
 use crate::cmd::Arguments;
 use crate::types::K8sExecCredentials;
