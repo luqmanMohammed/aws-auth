@@ -121,6 +121,7 @@ impl AwsSsoCredentialProvider {
             .build();
 
         let ssooidc_client = aws_sdk_ssooidc::Client::new(&sdkconfig);
+
         let register_client = ssooidc_client
             .register_client()
             .client_name(OIDC_APP_NAME)
@@ -181,9 +182,8 @@ impl AwsSsoCredentialProvider {
                     tries += 1;
                 }
             }
-        };
-
-        let token = token.map_err(ProviderAwsSsoError::OidcCreateTokenRetriesExpired)?;
+        }
+        .map_err(ProviderAwsSsoError::OidcCreateTokenRetriesExpired)?;
 
         let sso_client = aws_sdk_sso::Client::new(&sdkconfig);
         let credentials = sso_client
