@@ -2,6 +2,7 @@ mod cache;
 mod cmd;
 mod credential_providers;
 mod types;
+mod utils;
 
 use cache::CacheManager;
 use cmd::Arguments;

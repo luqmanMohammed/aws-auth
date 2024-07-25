@@ -11,7 +11,7 @@ use aws_sigv4::sign;
 use aws_smithy_runtime_api::client::identity::Identity;
 use base64::{engine::general_purpose::URL_SAFE, Engine};
 use chrono::{Duration, Local};
-use http::{Error, Request};
+use http::Request;
 use std::collections::HashMap;
 
 const K8S_AWS_ID_HEADER: &str = "x-k8s-aws-id";
@@ -19,20 +19,22 @@ const TOKEN_PREFIX: &str = "k8s-aws-v1";
 const DEFAULT_EXPIRTY: Duration = Duration::seconds(860);
 
 #[derive(Debug)]
-pub enum GenerateEksCredentialsError {
+pub enum Error {
     FailedToSign(SigningError),
-    InvalidRequest(Error),
+    InvalidRequest(http::Error),
 }
 
-impl std::error::Error for GenerateEksCredentialsError {}
+pub type Result<T> = std::result::Result<T, Error>;
 
-impl std::fmt::Display for GenerateEksCredentialsError {
+impl std::error::Error for Error {}
+
+impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GenerateEksCredentialsError::FailedToSign(err) => {
+            Error::FailedToSign(err) => {
                 writeln!(f, "Failed to Sign Request: {}", err)
             }
-            GenerateEksCredentialsError::InvalidRequest(err) => {
+            Error::InvalidRequest(err) => {
                 writeln!(f, "Invalid EKS Auth request parameters: {}", err)
             }
         }
@@ -44,7 +46,7 @@ pub fn generate_eks_credentials(
     region: &Region,
     cluster_name: &str,
     expires_in: Option<&Duration>,
-) -> Result<K8sExecCredentials, GenerateEksCredentialsError> {
+) -> Result<K8sExecCredentials> {
     let expires_in = expires_in.unwrap_or(&DEFAULT_EXPIRTY);
 
     let mut settings = SigningSettings::default();
@@ -74,16 +76,16 @@ pub fn generate_eks_credentials(
         vec![(K8S_AWS_ID_HEADER, cluster_name)].into_iter(),
         aws_sigv4::http_request::SignableBody::Bytes(&[]),
     )
-    .map_err(GenerateEksCredentialsError::FailedToSign)?;
+    .map_err(Error::FailedToSign)?;
 
     let (signing_instruction, _) = http_request::sign(request, &SigningParams::V4(params))
-        .map_err(GenerateEksCredentialsError::FailedToSign)?
+        .map_err(Error::FailedToSign)?
         .into_parts();
 
     let mut request = Request::builder()
         .uri(&uri)
         .body(())
-        .map_err(GenerateEksCredentialsError::InvalidRequest)?;
+        .map_err(Error::InvalidRequest)?;
 
     signing_instruction.apply_to_request_http1x(&mut request);
     let encoded_url = URL_SAFE.encode(request.uri().to_string().into_bytes());

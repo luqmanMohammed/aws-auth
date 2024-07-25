@@ -1,4 +1,4 @@
-use super::utils;
+use crate::utils;
 use serde::Deserialize;
 use std::{
     fs::File,
@@ -8,10 +8,12 @@ use std::{
 };
 
 #[derive(Debug)]
-pub enum AwsSsoConfigError {
+pub enum Error {
     InvalidConfig(serde_json::Error),
     ConfigNotFound(PathBuf, std::io::Error),
 }
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Deserialize)]
 pub struct AwsSsoConfig {
@@ -27,22 +29,22 @@ pub struct AwsSsoConfig {
     pub expires_in: Option<Duration>,
 }
 
-impl std::fmt::Display for AwsSsoConfigError {
+impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AwsSsoConfigError::InvalidConfig(err) => writeln!(
+            Error::InvalidConfig(err) => writeln!(
                 f,
                 "Invalid config due to missing fields or Invalid Syntax: {}",
                 err
             ),
-            AwsSsoConfigError::ConfigNotFound(path, err) => {
+            Error::ConfigNotFound(path, err) => {
                 writeln!(f, "Config file not found at {:?}: {}", path, err)
             }
         }
     }
 }
 
-impl std::error::Error for AwsSsoConfigError {}
+impl std::error::Error for Error {}
 
 fn resolve_config_path(config_path: Option<&Path>) -> PathBuf {
     config_path.map_or_else(
@@ -55,14 +57,14 @@ fn resolve_config_path(config_path: Option<&Path>) -> PathBuf {
 }
 
 impl AwsSsoConfig {
-    fn load_config_from_reader<R: Read>(reader: R) -> Result<Self, AwsSsoConfigError> {
-        serde_json::from_reader::<R, AwsSsoConfig>(reader).map_err(AwsSsoConfigError::InvalidConfig)
+    fn load_config_from_reader<R: Read>(reader: R) -> Result<Self> {
+        serde_json::from_reader::<R, AwsSsoConfig>(reader).map_err(Error::InvalidConfig)
     }
 
-    pub fn load_config(config_path: Option<&Path>) -> Result<Self, AwsSsoConfigError> {
+    pub fn load_config(config_path: Option<&Path>) -> Result<Self> {
         let config_path = resolve_config_path(config_path);
-        let config_file = File::open(&config_path)
-            .map_err(|err| AwsSsoConfigError::ConfigNotFound(config_path, err))?;
+        let config_file =
+            File::open(&config_path).map_err(|err| Error::ConfigNotFound(config_path, err))?;
         AwsSsoConfig::load_config_from_reader(config_file)
     }
 }
