@@ -20,18 +20,42 @@ const DEFAULT_CREATE_TOKEN_INITIAL_DELAY: Duration = Duration::seconds(10);
 const DEFAULT_CREATE_TOKEN_RETRY_INTERVAL: Duration = Duration::seconds(5);
 const DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS: usize = 10;
 
+#[derive(Debug)]
 pub enum Error<CE: 'static + std::error::Error + std::fmt::Debug> {
-    OidcRegisterClientError(SdkError<RegisterClientError, Response>),
-    OidcStartDeviceAuthorizationError(SdkError<StartDeviceAuthorizationError, Response>),
-    OidcWebBrowserApproveError(std::io::Error),
-    OidcCreateTokenError(SdkError<CreateTokenError, Response>),
+    OidcRegisterClient(SdkError<RegisterClientError, Response>),
+    OidcStartDeviceAuthorization(SdkError<StartDeviceAuthorizationError, Response>),
+    OidcWebBrowserApprove(std::io::Error),
+    OidcCreateToken(SdkError<CreateTokenError, Response>),
     OidcTokenRefreshFailed(SdkError<CreateTokenError, Response>),
-    SsoGetRoleCredentialsError(SdkError<GetRoleCredentialsError, Response>),
-    CacheError(CE),
+    SsoGetRoleCredentials(SdkError<GetRoleCredentialsError, Response>),
+    Cache(CE),
 }
 
-type Result<T, CE: 'static + std::error::Error + std::fmt::Debug> =
-    std::result::Result<T, Error<CE>>;
+impl<CE: 'static + std::error::Error + std::fmt::Debug> std::fmt::Display for Error<CE> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::OidcRegisterClient(err) => writeln!(f, "Oidc Register Client Error: {}", err),
+            Error::OidcStartDeviceAuthorization(err) => {
+                writeln!(f, "Oidc Start Device Authorization Error: {}", err)
+            }
+            Error::OidcWebBrowserApprove(err) => {
+                writeln!(f, "Oidc Web Browser Approve Error: {}", err)
+            }
+            Error::OidcCreateToken(err) => writeln!(f, "Oidc Create Token Error: {}", err),
+            Error::OidcTokenRefreshFailed(err) => {
+                writeln!(f, "Oidc Token Refresh Failed Error: {}", err)
+            }
+            Error::SsoGetRoleCredentials(err) => {
+                writeln!(f, "Sso GetRole Credentials Error: {}", err)
+            }
+            Error::Cache(err) => writeln!(f, "Cache Error: {}", err),
+        }
+    }
+}
+
+impl<CE: 'static + std::error::Error + std::fmt::Debug> std::error::Error for Error<CE> {}
+
+type Result<T, CE> = std::result::Result<T, Error<CE>>;
 
 pub struct AuthManager<C>
 where
@@ -41,7 +65,7 @@ where
     sso_client: SsoClient,
     cache_manager: C,
     start_url: String,
-    initial_deplay: Duration,
+    initial_delay: Duration,
     max_attempts: usize,
     retry_interval: Duration,
 
@@ -59,7 +83,7 @@ where
         cache_manager: C,
         start_url: String,
         sso_region: Region,
-        initial_deplay: Option<Duration>,
+        initial_delay: Option<Duration>,
         max_attempts: Option<usize>,
         retry_interval: Option<Duration>,
     ) -> Self {
@@ -76,7 +100,7 @@ where
             sso_client,
             cache_manager,
             start_url,
-            initial_deplay: initial_deplay.unwrap_or(DEFAULT_CREATE_TOKEN_INITIAL_DELAY),
+            initial_delay: initial_delay.unwrap_or(DEFAULT_CREATE_TOKEN_INITIAL_DELAY),
             max_attempts: max_attempts.unwrap_or(DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS),
             retry_interval: retry_interval.unwrap_or(DEFAULT_CREATE_TOKEN_RETRY_INTERVAL),
             client_info: ClientInformation::default(),
@@ -115,7 +139,7 @@ where
             .set_session(account_id, role_name, credentials.clone());
         self.cache_manager.set_client_info(self.client_info.clone());
 
-        self.cache_manager.commit().map_err(Error::CacheError)?;
+        self.cache_manager.commit().map_err(Error::Cache)?;
 
         Ok(credentials)
     }
@@ -126,7 +150,7 @@ where
             self.client_info.client_id = None;
             self.client_info.client_secret = None;
         } else {
-            self.client_info = self.cache_manager.get_client_information();
+            self.client_info = self.cache_manager.get_computed_client_info();
         }
         self.client_info.start_url = Some(self.start_url.clone());
     }
@@ -139,7 +163,7 @@ where
             .client_type(OIDC_CLIENT_TYPE)
             .send()
             .await
-            .map_err(Error::OidcRegisterClientError)?;
+            .map_err(Error::OidcRegisterClient)?;
 
         let device_auth = self
             .oidc_client
@@ -149,26 +173,27 @@ where
             .start_url(&self.start_url)
             .send()
             .await
-            .map_err(Error::OidcStartDeviceAuthorizationError)?;
+            .map_err(Error::OidcStartDeviceAuthorization)?;
 
         eprintln!("User Code: {}", device_auth.user_code.as_deref().unwrap());
 
         webbrowser::open(
             device_auth
-                .verification_uri
+                .verification_uri_complete
                 .as_deref()
                 .expect("verification_uri should be present"),
         )
-        .map_err(Error::OidcWebBrowserApproveError)?;
+        .map_err(Error::OidcWebBrowserApprove)?;
 
         self.client_info.client_id = register_client.client_id;
         self.client_info.client_secret = register_client.client_secret;
         self.client_info.client_secret_expires_at =
             DateTime::from_timestamp(register_client.client_secret_expires_at, 0);
         self.device_code = device_auth.device_code;
-        self.device_interval = Some(Duration::seconds(device_auth.expires_in as i64));
+        self.device_interval = Some(Duration::seconds(device_auth.interval as i64));
 
-        thread::sleep(self.initial_deplay.to_std().unwrap());
+        thread::sleep(self.initial_delay.to_std().unwrap());
+        println!("Came");
 
         Ok(())
     }
@@ -179,6 +204,7 @@ where
         } else {
             self.retry_interval
         };
+        println!("{}", interval.num_seconds());
         let mut attempts = 0;
         let create_token = loop {
             match self
@@ -199,7 +225,7 @@ where
                 }
             }
         }
-        .map_err(Error::OidcCreateTokenError)?;
+        .map_err(Error::OidcCreateToken)?;
 
         self.client_info.access_token = create_token.access_token;
         self.client_info.refresh_token = create_token.refresh_token;
@@ -239,7 +265,7 @@ where
             .access_token(self.client_info.access_token.as_deref().unwrap())
             .send()
             .await
-            .map_err(Error::SsoGetRoleCredentialsError)?;
+            .map_err(Error::SsoGetRoleCredentials)?;
         Ok(from_role_credentials(credentials.role_credentials.unwrap()))
     }
 }

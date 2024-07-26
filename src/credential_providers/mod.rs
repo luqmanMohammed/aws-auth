@@ -26,7 +26,7 @@ impl From<Arguments> for ProvideCredentialsInput {
 pub trait ProvideCredentials {
     type Error: std::error::Error + Sync + Send;
     async fn provide_credentials(
-        &self,
+        self,
         input: &ProvideCredentialsInput,
     ) -> Result<K8sExecCredentials, Self::Error>;
 }

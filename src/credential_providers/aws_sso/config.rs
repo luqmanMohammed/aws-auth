@@ -21,8 +21,10 @@ pub struct AwsSsoConfig {
     pub start_url: String,
     #[serde(alias = "ssoRegion")]
     pub sso_reigon: String,
-    #[serde(alias = "maxRetries")]
-    pub max_retries: Option<usize>,
+    #[serde(alias = "maxAttempts")]
+    pub max_attempts: Option<usize>,
+    #[serde(alias = "initialDelay")]
+    pub initial_delay: Option<Duration>,
     #[serde(alias = "retryInterval")]
     pub retry_interval: Option<Duration>,
     #[serde(alias = "expiresIn")]

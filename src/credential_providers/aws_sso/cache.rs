@@ -2,12 +2,12 @@ use crate::credential_providers::aws_sso::types::{ClientInformation, Credentials
 use aws_sdk_ssooidc::config::Credentials;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::SystemTime};
 
 const EXPIRATION_BUFFER: Duration = Duration::minutes(5);
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-struct Cache {
+#[derive(Deserialize, Serialize, Debug, Clone, Default)]
+pub struct Cache {
     client_info: ClientInformation,
     sessions: HashMap<String, CredentialsWrapper>,
 }
@@ -19,7 +19,6 @@ pub trait CacheManager {
     fn commit(&self) -> Result<(), Self::Error>;
     fn get_cache_as_ref(&self) -> &Cache;
     fn get_cache_as_mut(&mut self) -> &mut Cache;
-    fn get_cache(&self) -> Cache;
 
     fn is_valid(&self, start_url: &str) -> bool {
         self.get_cache_as_ref()
@@ -75,7 +74,7 @@ pub trait CacheManager {
         let credentials = self.get_cache_as_ref().sessions.get(&cache_key)?;
 
         if let Some(expiry) = credentials.expires_after {
-            if Utc::now() > expiry + EXPIRATION_BUFFER {
+            if SystemTime::now() > expiry + std::time::Duration::from_secs(300) {
                 return None;
             }
         }
@@ -83,10 +82,7 @@ pub trait CacheManager {
         Some(credentials)
     }
 
-    fn get_client_information(&self) -> ClientInformation {
-        self.get_cache().client_info
-    }
-
+    #[allow(dead_code)]
     fn set_client(
         &mut self,
         client_id: String,
@@ -99,6 +95,7 @@ pub trait CacheManager {
             DateTime::from_timestamp(client_secret_expires_at, 0);
     }
 
+    #[allow(dead_code)]
     fn set_access_token(&mut self, access_token: String, access_token_expires_in: i32) {
         self.get_cache_as_mut().client_info.access_token = Some(access_token);
         self.get_cache_as_mut().client_info.access_token_expires_at =
@@ -115,8 +112,100 @@ pub trait CacheManager {
     fn set_client_info(&mut self, client_info: ClientInformation) {
         self.get_cache_as_mut().client_info = client_info;
     }
+
+    fn get_computed_client_info(&self) -> ClientInformation {
+        let mut ninfo = ClientInformation::default();
+        let cinfo = self.get_cache_as_ref().client_info.clone();
+
+        if self.get_client_credentials().is_some() {
+            ninfo.client_id = cinfo.client_id;
+            ninfo.client_secret = cinfo.client_secret;
+            ninfo.client_secret_expires_at = cinfo.client_secret_expires_at;
+        } else {
+            return ninfo;
+        }
+
+        if self.get_access_token().is_some() {
+            ninfo.access_token = cinfo.access_token;
+            ninfo.access_token_expires_at = cinfo.access_token_expires_at;
+        } else {
+            return ninfo;
+        }
+
+        if self.get_refresh_token().is_some() {
+            ninfo.refresh_token = cinfo.refresh_token;
+        }
+
+        ninfo
+    }
 }
 
-pub struct MonoJsonCacheManager {
-    
+pub mod mono_json {
+    use crate::credential_providers::aws_sso::cache::Cache;
+    use crate::credential_providers::aws_sso::cache::CacheManager;
+    use crate::utils::resolve_awssso_home;
+    use std::fs::File;
+    use std::path::{Path, PathBuf};
+
+    #[derive(Debug)]
+    pub enum Error {
+        SerdeJson(serde_json::Error),
+        CacheNotFound(std::io::Error),
+    }
+
+    impl std::fmt::Display for Error {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Error::SerdeJson(err) => writeln!(f, "Invalid cache json: {}", err),
+                Error::CacheNotFound(err) => writeln!(f, "Cache not found: {}", err),
+            }
+        }
+    }
+
+    impl std::error::Error for Error {}
+
+    pub struct MonoJsonCacheManager {
+        cache: Cache,
+        cache_path: PathBuf,
+    }
+
+    impl MonoJsonCacheManager {
+        pub fn new(cache_path: Option<&Path>) -> Self {
+            let cache_path = match cache_path {
+                Some(cp) => cp.to_path_buf(),
+                None => resolve_awssso_home(None).join("cache.json"),
+            };
+
+            Self {
+                cache: Cache::default(),
+                cache_path,
+            }
+        }
+    }
+
+    impl CacheManager for MonoJsonCacheManager {
+        type Error = Error;
+
+        fn load_cache(&mut self) -> Result<(), Self::Error> {
+            let cache_file = File::open(&self.cache_path).map_err(Error::CacheNotFound)?;
+            let cache =
+                serde_json::from_reader::<File, Cache>(cache_file).map_err(Error::SerdeJson)?;
+            self.cache = cache;
+            Ok(())
+        }
+
+        fn commit(&self) -> Result<(), Self::Error> {
+            let cache_file = File::create(&self.cache_path).map_err(Error::CacheNotFound)?;
+            serde_json::to_writer(cache_file, &self.cache).map_err(Error::SerdeJson)?;
+            Ok(())
+        }
+
+        fn get_cache_as_ref(&self) -> &Cache {
+            &self.cache
+        }
+
+        fn get_cache_as_mut(&mut self) -> &mut Cache {
+            &mut self.cache
+        }
+    }
 }

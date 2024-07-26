@@ -32,7 +32,7 @@ impl std::error::Error for ProviderAwsCmdError {}
 impl ProvideCredentials for AwsCmdCredentialProvider {
     type Error = ProviderAwsCmdError;
     async fn provide_credentials(
-        &self,
+        self,
         input: &super::ProvideCredentialsInput,
     ) -> Result<crate::types::K8sExecCredentials, Self::Error> {
         let filtered_envs: HashMap<String, String> =
