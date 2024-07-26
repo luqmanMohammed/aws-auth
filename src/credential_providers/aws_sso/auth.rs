@@ -70,8 +70,6 @@ where
     retry_interval: Duration,
 
     client_info: ClientInformation,
-    device_code: Option<String>,
-    device_interval: Option<Duration>,
 }
 
 impl<C> AuthManager<C>
@@ -104,8 +102,6 @@ where
             max_attempts: max_attempts.unwrap_or(DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS),
             retry_interval: retry_interval.unwrap_or(DEFAULT_CREATE_TOKEN_RETRY_INTERVAL),
             client_info: ClientInformation::default(),
-            device_code: None,
-            device_interval: None,
         }
     }
 
@@ -165,11 +161,20 @@ where
             .await
             .map_err(Error::OidcRegisterClient)?;
 
+        self.client_info.client_id = register_client.client_id;
+        self.client_info.client_secret = register_client.client_secret;
+        self.client_info.client_secret_expires_at =
+            DateTime::from_timestamp(register_client.client_secret_expires_at, 0);
+
+        Ok(())
+    }
+
+    async fn create_access_token(&mut self) -> Result<(), C::Error> {
         let device_auth = self
             .oidc_client
             .start_device_authorization()
-            .client_id(register_client.client_id().unwrap())
-            .client_secret(register_client.client_secret().unwrap())
+            .client_id(self.client_info.client_id.as_deref().unwrap())
+            .client_secret(self.client_info.client_secret.as_deref().unwrap())
             .start_url(&self.start_url)
             .send()
             .await
@@ -185,22 +190,11 @@ where
         )
         .map_err(Error::OidcWebBrowserApprove)?;
 
-        self.client_info.client_id = register_client.client_id;
-        self.client_info.client_secret = register_client.client_secret;
-        self.client_info.client_secret_expires_at =
-            DateTime::from_timestamp(register_client.client_secret_expires_at, 0);
-        self.device_code = device_auth.device_code;
-        self.device_interval = Some(Duration::seconds(device_auth.interval as i64));
-
         thread::sleep(self.initial_delay.to_std().unwrap());
-        println!("Came");
 
-        Ok(())
-    }
-
-    async fn create_access_token(&mut self) -> Result<(), C::Error> {
-        let interval = if self.retry_interval < self.device_interval.expect("should be available") {
-            self.device_interval.unwrap()
+        let device_interval = Duration::seconds(device_auth.interval as i64);
+        let interval = if self.retry_interval < device_interval {
+            device_interval
         } else {
             self.retry_interval
         };
@@ -213,7 +207,7 @@ where
                 .client_id(self.client_info.client_id.as_deref().unwrap())
                 .client_secret(self.client_info.client_secret.as_deref().unwrap())
                 .grant_type(GRANT_TYPE)
-                .device_code(self.device_code.as_deref().unwrap())
+                .device_code(device_auth.device_code.as_deref().unwrap())
                 .send()
                 .await
             {
