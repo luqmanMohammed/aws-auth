@@ -2,12 +2,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub const DEFAULT_EXEC_CREDENTIALS_KIND: &str = "";
-pub const DEFAULT_EXEC_CREDENTIALS_API_VERSION: &str = "";
+pub const DEFAULT_EXEC_CREDENTIALS_KIND: &str = "ExecCredential";
+pub const DEFAULT_EXEC_CREDENTIALS_API_VERSION: &str = "client.authentication.k8s.io/v1beta1";
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct K8sExecCredentialsStatus {
-    #[serde(alias = "expirationTimestamp")]
+    #[serde(rename = "expirationTimestamp")]
     pub expiration_timestamp: DateTime<Utc>,
     pub token: String,
 }
@@ -15,7 +15,7 @@ pub struct K8sExecCredentialsStatus {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct K8sExecCredentials {
     pub kind: String,
-    #[serde(alias = "apiVersion")]
+    #[serde(rename = "apiVersion")]
     pub api_version: String,
     pub spec: HashMap<String, serde_json::Value>,
     pub status: K8sExecCredentialsStatus,
