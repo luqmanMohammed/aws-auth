@@ -78,6 +78,7 @@ impl ProvideCredentials for AwsSsoCredentialProvider {
             self.initial_delay,
             self.max_attempts,
             self.retry_interval,
+            Some(std::io::stdout()),
         );
         let credentials = auth_manager
             .assume_role(&input.account_id, &input.role)

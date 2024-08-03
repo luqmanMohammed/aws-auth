@@ -70,6 +70,7 @@ where
     retry_interval: Duration,
 
     client_info: ClientInformation,
+    code_writer: Box<dyn std::io::Write + 'static>,
 }
 
 impl<C> AuthManager<C>
@@ -79,11 +80,12 @@ where
 {
     pub fn new(
         cache_manager: C,
-        start_url: String,
+        start_url: impl Into<String>,
         sso_region: Region,
         initial_delay: Option<Duration>,
         max_attempts: Option<usize>,
         retry_interval: Option<Duration>,
+        code_writer: Option<impl std::io::Write + 'static>,
     ) -> Self {
         let sdk_config = SdkConfig::builder()
             .app_name(AppName::new(OIDC_APP_NAME).expect("Const app name should be valid"))
@@ -97,11 +99,15 @@ where
             oidc_client,
             sso_client,
             cache_manager,
-            start_url,
+            start_url: start_url.into(),
             initial_delay: initial_delay.unwrap_or(DEFAULT_CREATE_TOKEN_INITIAL_DELAY),
             max_attempts: max_attempts.unwrap_or(DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS),
             retry_interval: retry_interval.unwrap_or(DEFAULT_CREATE_TOKEN_RETRY_INTERVAL),
             client_info: ClientInformation::default(),
+            code_writer: match code_writer {
+                Some(cw) => Box::new(cw),
+                None => Box::new(std::io::stderr()),
+            },
         }
     }
 
@@ -180,7 +186,11 @@ where
             .await
             .map_err(Error::OidcStartDeviceAuthorization)?;
 
-        eprintln!("User Code: {}", device_auth.user_code.as_deref().unwrap());
+        let _ = writeln!(
+            self.code_writer,
+            "User Code: {}",
+            device_auth.user_code.as_deref().unwrap()
+        );
 
         webbrowser::open(
             device_auth
