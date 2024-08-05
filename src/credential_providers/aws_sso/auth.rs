@@ -216,7 +216,6 @@ where
         } else {
             self.retry_interval
         };
-        println!("{}", interval.num_seconds());
         let mut attempts = 0;
         let create_token = loop {
             match self
