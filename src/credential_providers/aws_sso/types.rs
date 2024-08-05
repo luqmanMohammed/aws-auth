@@ -1,5 +1,3 @@
-use std::time::UNIX_EPOCH;
-
 use aws_sdk_ssooidc::config::Credentials;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -9,7 +7,7 @@ pub struct CredentialsWrapper {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub session_token: Option<String>,
-    pub expires_after: Option<u64>,
+    pub expires_after: Option<DateTime<Utc>>,
 }
 
 impl From<Credentials> for CredentialsWrapper {
@@ -18,9 +16,7 @@ impl From<Credentials> for CredentialsWrapper {
             access_key_id: value.access_key_id().to_string(),
             secret_access_key: value.secret_access_key().to_string(),
             session_token: value.session_token().map(ToString::to_string),
-            expires_after: value
-                .expiry()
-                .map(|d| d.duration_since(UNIX_EPOCH).unwrap().as_secs()),
+            expires_after: value.expiry().map(Into::into),
         }
     }
 }
@@ -31,9 +27,7 @@ impl From<CredentialsWrapper> for Credentials {
             value.access_key_id,
             value.secret_access_key,
             value.session_token,
-            value
-                .expires_after
-                .map(|d| UNIX_EPOCH + std::time::Duration::from_secs(d)),
+            value.expires_after.map(Into::into),
             "credential-wrapper",
         )
     }

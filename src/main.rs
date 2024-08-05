@@ -1,3 +1,5 @@
+#![warn(unused_extern_crates)]
+
 mod cache;
 mod cmd;
 mod credential_providers;
@@ -7,8 +9,8 @@ mod utils;
 use cache::CacheManager;
 use cmd::Arguments;
 use credential_providers::{
-    aws_sso::config::AwsSsoConfig, aws_sso::AwsSsoCredentialProvider, provide_credentials,
-    ProvideCredentialsInput,
+    aws_sso::{config::AwsSsoConfig, AwsSsoCredentialProvider},
+    provide_credentials, ProvideCredentialsInput,
 };
 use std::error::Error;
 

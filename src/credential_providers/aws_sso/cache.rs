@@ -2,10 +2,7 @@ use crate::credential_providers::aws_sso::types::{ClientInformation, Credentials
 use aws_sdk_ssooidc::config::Credentials;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::collections::HashMap;
 
 const EXPIRATION_BUFFER: Duration = Duration::minutes(5);
 
@@ -76,12 +73,7 @@ pub trait CacheManager {
         let cache_key = format!("{}-{}", account_id, role_name);
         let credentials = self.get_cache_as_ref().sessions.get(&cache_key)?;
         if let Some(expiry) = credentials.expires_after {
-            if SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                > expiry
-            {
+            if Utc::now() > expiry - EXPIRATION_BUFFER {
                 return None;
             }
         } else {

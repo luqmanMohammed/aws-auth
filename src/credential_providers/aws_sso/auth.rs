@@ -2,7 +2,6 @@ use crate::credential_providers::aws_sso::cache::CacheManager;
 use crate::credential_providers::aws_sso::types::ClientInformation;
 use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
 use aws_sdk_sso::operation::get_role_credentials::GetRoleCredentialsError;
-use aws_sdk_sso::types::RoleCredentials;
 use aws_sdk_sso::Client as SsoClient;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenError;
 use aws_sdk_ssooidc::operation::register_client::RegisterClientError;
@@ -12,6 +11,7 @@ use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_runtime_api::http::Response;
 use chrono::{DateTime, Duration, Utc};
 use std::thread;
+use std::time::UNIX_EPOCH;
 
 const OIDC_APP_NAME: &str = "aws-sso-eks-auth";
 const OIDC_CLIENT_TYPE: &str = "public";
@@ -19,6 +19,7 @@ const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_CREATE_TOKEN_INITIAL_DELAY: Duration = Duration::seconds(10);
 const DEFAULT_CREATE_TOKEN_RETRY_INTERVAL: Duration = Duration::seconds(5);
 const DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS: usize = 10;
+const EXPECT_MESSAGE: &str = "Should be present, caller pub function assume_role asures it";
 
 #[derive(Debug)]
 pub enum Error<CE: 'static + std::error::Error + std::fmt::Debug> {
@@ -85,7 +86,7 @@ where
         initial_delay: Option<Duration>,
         max_attempts: Option<usize>,
         retry_interval: Option<Duration>,
-        code_writer: Option<impl std::io::Write + 'static>,
+        code_writer: Option<Box<dyn std::io::Write + 'static>>,
     ) -> Self {
         let sdk_config = SdkConfig::builder()
             .app_name(AppName::new(OIDC_APP_NAME).expect("Const app name should be valid"))
@@ -105,7 +106,7 @@ where
             retry_interval: retry_interval.unwrap_or(DEFAULT_CREATE_TOKEN_RETRY_INTERVAL),
             client_info: ClientInformation::default(),
             code_writer: match code_writer {
-                Some(cw) => Box::new(cw),
+                Some(cw) => cw,
                 None => Box::new(std::io::stderr()),
             },
         }
@@ -179,8 +180,13 @@ where
         let device_auth = self
             .oidc_client
             .start_device_authorization()
-            .client_id(self.client_info.client_id.as_deref().unwrap())
-            .client_secret(self.client_info.client_secret.as_deref().unwrap())
+            .client_id(self.client_info.client_id.as_deref().expect(EXPECT_MESSAGE))
+            .client_secret(
+                self.client_info
+                    .client_secret
+                    .as_deref()
+                    .expect(EXPECT_MESSAGE),
+            )
             .start_url(&self.start_url)
             .send()
             .await
@@ -189,7 +195,9 @@ where
         let _ = writeln!(
             self.code_writer,
             "User Code: {}",
-            device_auth.user_code.as_deref().unwrap()
+            device_auth.user_code.as_deref().expect(
+                "Should be present. StartDeviceAuthorization fails fast in case of an error"
+            )
         );
 
         webbrowser::open(
@@ -214,10 +222,15 @@ where
             match self
                 .oidc_client
                 .create_token()
-                .client_id(self.client_info.client_id.as_deref().unwrap())
-                .client_secret(self.client_info.client_secret.as_deref().unwrap())
+                .client_id(self.client_info.client_id.as_deref().expect(EXPECT_MESSAGE))
+                .client_secret(
+                    self.client_info
+                        .client_secret
+                        .as_deref()
+                        .expect(EXPECT_MESSAGE),
+                )
                 .grant_type(GRANT_TYPE)
-                .device_code(device_auth.device_code.as_deref().unwrap())
+                .device_code(device_auth.device_code.as_deref().expect(EXPECT_MESSAGE))
                 .send()
                 .await
             {
@@ -242,10 +255,20 @@ where
         let create_token = self
             .oidc_client
             .create_token()
-            .client_id(self.client_info.client_id.as_deref().unwrap())
-            .client_secret(self.client_info.client_secret.as_deref().unwrap())
+            .client_id(self.client_info.client_id.as_deref().expect(EXPECT_MESSAGE))
+            .client_secret(
+                self.client_info
+                    .client_secret
+                    .as_deref()
+                    .expect(EXPECT_MESSAGE),
+            )
             .grant_type("refresh_token")
-            .refresh_token(self.client_info.refresh_token.as_deref().unwrap())
+            .refresh_token(
+                self.client_info
+                    .refresh_token
+                    .as_deref()
+                    .expect(EXPECT_MESSAGE),
+            )
             .send()
             .await
             .map_err(Error::OidcTokenRefreshFailed)?;
@@ -266,20 +289,31 @@ where
             .get_role_credentials()
             .role_name(role_name)
             .account_id(account_id)
-            .access_token(self.client_info.access_token.as_deref().unwrap())
+            .access_token(
+                self.client_info
+                    .access_token
+                    .as_deref()
+                    .expect(EXPECT_MESSAGE),
+            )
             .send()
             .await
-            .map_err(Error::SsoGetRoleCredentials)?;
-        Ok(from_role_credentials(credentials.role_credentials.unwrap()))
-    }
-}
+            .map_err(Error::SsoGetRoleCredentials)?
+            .role_credentials
+            .expect("Exit early if GetRoleCredentials fails, role credentials should be present");
 
-fn from_role_credentials(role_credentials: RoleCredentials) -> Credentials {
-    Credentials::new(
-        role_credentials.access_key_id.unwrap(),
-        role_credentials.secret_access_key.unwrap(),
-        role_credentials.session_token,
-        DateTime::from_timestamp(role_credentials.expiration, 0).map(|d| d.into()),
-        "role-credentials",
-    )
+        Ok(Credentials::new(
+            credentials
+                .access_key_id
+                .expect("Should be present, Succesfull GetRoleCredentials assures it"),
+            credentials
+                .secret_access_key
+                .expect("Should be present, Succesfull GetRoleCredentials assures it"),
+            credentials.session_token,
+            Some(
+                UNIX_EPOCH
+                    + std::time::Duration::from_millis(credentials.expiration.try_into().unwrap()),
+            ),
+            "role-credentials",
+        ))
+    }
 }
