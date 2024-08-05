@@ -114,6 +114,10 @@ pub trait CacheManager {
         self.get_cache_as_mut().client_info = client_info;
     }
 
+    fn clear_sessions(&mut self) {
+        self.get_cache_as_mut().sessions = HashMap::new();
+    }
+
     fn get_computed_client_info(&self) -> ClientInformation {
         let mut ninfo = ClientInformation::default();
         let cinfo = self.get_cache_as_ref().client_info.clone();

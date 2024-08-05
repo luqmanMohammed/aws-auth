@@ -126,8 +126,10 @@ where
         }
         if self.client_info.access_token.is_none() && self.client_info.refresh_token.is_some() {
             self.refresh_access_token().await?;
+            self.cache_manager.clear_sessions();
         } else if self.client_info.access_token.is_none() {
             self.create_access_token().await?;
+            self.cache_manager.clear_sessions();
         }
 
         let credentials = if let Some(cached_credentials) =
