@@ -1,9 +1,8 @@
 use std::collections::HashMap;
-use std::error::Error;
-use std::fmt;
 use std::env;
+use std::fmt;
 
-pub struct Args {
+pub struct Arguments {
     pub account: String,
     pub role: String,
     pub region: String,
@@ -12,29 +11,24 @@ pub struct Args {
 }
 
 #[derive(Debug)]
-pub struct ArgParseError {
-    message: String,
+pub enum CmdError {
+    MissingArgument(String),
 }
-impl fmt::Display for ArgParseError {
+
+impl fmt::Display for CmdError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Failed to convert args into EKS Auth Args: {}",
-            self.message
-        )
+        match self {
+            CmdError::MissingArgument(argument) => {
+                writeln!(f, "Missing required argument: --{}", argument)
+            }
+        }
     }
 }
-impl Error for ArgParseError {}
+impl std::error::Error for CmdError {}
 
-impl TryFrom<Vec<String>> for Args {
-    type Error = ArgParseError;
+impl TryFrom<Vec<String>> for Arguments {
+    type Error = CmdError;
     fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
-        if value.len() % 2 != 0 {
-            return Err(ArgParseError {
-                message: String::from("Invalid number of arguments"),
-            });
-        }
-
         let mut arg_map: HashMap<String, String> = HashMap::new();
         let mut key: Option<String> = None;
         for (i, arg) in value.into_iter().enumerate() {
@@ -48,13 +42,13 @@ impl TryFrom<Vec<String>> for Args {
         fn safe_get_arg<'a>(
             arg_map: &'a HashMap<String, String>,
             arg: &str,
-        ) -> Result<&'a String, ArgParseError> {
-            arg_map.get(arg).ok_or_else(|| ArgParseError {
-                message: format!("Required argument '--{}' missing", arg),
-            })
+        ) -> Result<&'a String, CmdError> {
+            arg_map
+                .get(arg)
+                .ok_or_else(|| CmdError::MissingArgument(arg.to_string()))
         }
 
-        Ok(Args {
+        Ok(Arguments {
             account: safe_get_arg(&arg_map, "account")?.to_string(),
             role: safe_get_arg(&arg_map, "role")?.to_string(),
             region: safe_get_arg(&arg_map, "region")?.to_string(),
@@ -68,8 +62,8 @@ impl TryFrom<Vec<String>> for Args {
     }
 }
 
-impl Args {
-    pub fn from_env_args() -> Result<Args, ArgParseError> {
-        Args::try_from(env::args().collect::<Vec<_>>()[1..].to_vec())
+impl Arguments {
+    pub fn from_env_args() -> Result<Arguments, CmdError> {
+        Arguments::try_from(env::args().collect::<Vec<_>>()[1..].to_vec())
     }
 }

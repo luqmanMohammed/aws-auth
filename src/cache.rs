@@ -1,4 +1,4 @@
-use crate::cmd::Args;
+use crate::cmd::Arguments as Args;
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use std::fs;
