@@ -13,7 +13,7 @@ use chrono::{DateTime, Duration, Utc};
 use std::thread;
 use std::time::UNIX_EPOCH;
 
-const OIDC_APP_NAME: &str = "aws-sso-eks-auth";
+const OIDC_APP_NAME: &str = "aws-auth";
 const OIDC_CLIENT_TYPE: &str = "public";
 const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_CREATE_TOKEN_INITIAL_DELAY: Duration = Duration::seconds(10);
@@ -69,6 +69,7 @@ where
     initial_delay: Duration,
     max_attempts: usize,
     retry_interval: Duration,
+    ignore_cache: bool,
 
     client_info: ClientInformation,
     code_writer: Box<dyn std::io::Write + 'static>,
@@ -79,6 +80,8 @@ where
     C: 'static + CacheManager,
     C::Error: 'static + std::error::Error + std::fmt::Debug,
 {
+    /// TODO: Refactor into a input type
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         cache_manager: C,
         start_url: impl Into<String>,
@@ -87,6 +90,7 @@ where
         max_attempts: Option<usize>,
         retry_interval: Option<Duration>,
         code_writer: Option<Box<dyn std::io::Write + 'static>>,
+        ignore_cache: bool,
     ) -> Self {
         let sdk_config = SdkConfig::builder()
             .app_name(AppName::new(OIDC_APP_NAME).expect("Const app name should be valid"))
@@ -109,6 +113,7 @@ where
                 Some(cw) => cw,
                 None => Box::new(std::io::stderr()),
             },
+            ignore_cache,
         }
     }
 
@@ -150,7 +155,9 @@ where
     }
 
     fn load_cache(&mut self) {
-        if self.cache_manager.load_cache().is_err() || !self.cache_manager.is_valid(&self.start_url)
+        if self.cache_manager.load_cache().is_err()
+            || !self.cache_manager.is_valid(&self.start_url)
+            || self.ignore_cache
         {
             self.client_info.client_id = None;
             self.client_info.client_secret = None;

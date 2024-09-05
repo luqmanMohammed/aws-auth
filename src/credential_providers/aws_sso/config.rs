@@ -1,4 +1,4 @@
-use crate::utils;
+use crate::credential_providers::aws_sso::utils;
 use serde::Deserialize;
 use std::{
     fs::File,
@@ -27,8 +27,6 @@ pub struct AwsSsoConfig {
     pub initial_delay: Option<Duration>,
     #[serde(alias = "retryInterval")]
     pub retry_interval: Option<Duration>,
-    #[serde(alias = "expiresIn")]
-    pub expires_in: Option<Duration>,
 }
 
 impl std::fmt::Display for Error {
