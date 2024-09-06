@@ -1,8 +1,8 @@
-use crate::cmd::Arguments as Args;
+use aws_config::Region;
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
 struct K8sExecCredential {
@@ -19,21 +19,29 @@ pub struct CacheManager {
     cache_path: PathBuf,
 }
 
+pub struct CacheManagerInputs<'a> {
+    pub account_id: &'a str,
+    pub role: &'a str,
+    pub region: &'a Region,
+    pub cluster: &'a str,
+    pub cache_dir: &'a Path,
+}
+
 impl CacheManager {
-    pub fn new(args: &Args) -> CacheManager {
+    pub fn new(args: &CacheManagerInputs) -> Self {
         let cache_file_name = format!(
             "eks-{account}-{role}-{region}-{cluster}",
-            account = &args.account,
+            account = &args.account_id,
             role = &args.role,
             region = &args.region,
-            cluster = &args.cluster_name
+            cluster = &args.cluster
         );
 
         let mut cache_path = PathBuf::new();
-        cache_path.push(&args.cache_dir);
+        cache_path.push(args.cache_dir);
         cache_path.push(cache_file_name);
 
-        CacheManager { cache_path }
+        Self { cache_path }
     }
 
     pub fn resolve_cache_hit(&self) -> Option<String> {
