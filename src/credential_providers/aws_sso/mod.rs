@@ -2,7 +2,6 @@ mod auth;
 mod cache;
 pub mod config;
 mod types;
-mod utils;
 
 use auth::AuthManager;
 use aws_config::Region;

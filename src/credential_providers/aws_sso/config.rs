@@ -1,4 +1,4 @@
-use crate::credential_providers::aws_sso::utils;
+use crate::utils;
 use serde::Deserialize;
 use std::{
     fs::File,
