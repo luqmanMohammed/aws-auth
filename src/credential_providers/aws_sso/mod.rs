@@ -1,17 +1,15 @@
 mod auth;
 mod cache;
 pub mod config;
-mod eks;
 mod types;
 
 use auth::AuthManager;
 use aws_config::Region;
+use aws_sdk_sso::config::Credentials;
 use cache::mono_json::MonoJsonCacheManager;
 use chrono::Duration;
-use eks::generate_eks_credentials;
 
 use crate::credential_providers::{ProvideCredentials, ProvideCredentialsInput};
-use crate::types::K8sExecCredentials;
 
 type CacheManager = MonoJsonCacheManager;
 type CacheManagerError = cache::mono_json::Error;
@@ -19,14 +17,12 @@ type CacheManagerError = cache::mono_json::Error;
 #[derive(Debug)]
 pub enum Error {
     AwsAuth(auth::Error<CacheManagerError>),
-    EksCreds(eks::Error),
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::AwsAuth(err) => writeln!(f, "Failed to generate Aws credentials: {}", err),
-            Error::EksCreds(err) => writeln!(f, "Failed to generate Eks credentials: {}", err),
         }
     }
 }
@@ -39,7 +35,6 @@ pub struct AwsSsoCredentialProvider {
     initial_delay: Option<Duration>,
     retry_interval: Option<Duration>,
     max_attempts: Option<usize>,
-    expires_in: Option<Duration>,
 }
 
 impl AwsSsoCredentialProvider {
@@ -50,7 +45,6 @@ impl AwsSsoCredentialProvider {
         initial_delay: Option<Duration>,
         retry_interval: Option<Duration>,
         max_attempts: Option<usize>,
-        expires_in: Option<Duration>,
     ) -> Self {
         Self {
             start_url,
@@ -58,7 +52,6 @@ impl AwsSsoCredentialProvider {
             initial_delay,
             retry_interval,
             max_attempts,
-            expires_in,
         }
     }
 }
@@ -69,8 +62,8 @@ impl ProvideCredentials for AwsSsoCredentialProvider {
     async fn provide_credentials(
         self,
         input: &ProvideCredentialsInput,
-    ) -> Result<K8sExecCredentials, Self::Error> {
-        let cache_manager: CacheManager = MonoJsonCacheManager::new(None);
+    ) -> Result<Credentials, Self::Error> {
+        let cache_manager: CacheManager = MonoJsonCacheManager::new(input.cache_dir.as_deref());
         let mut auth_manager = AuthManager::new(
             cache_manager,
             self.start_url,
@@ -79,18 +72,12 @@ impl ProvideCredentials for AwsSsoCredentialProvider {
             self.max_attempts,
             self.retry_interval,
             None,
+            input.ignore_cache,
         );
-        let credentials = auth_manager
+        auth_manager
             .assume_role(&input.account_id, &input.role)
             .await
-            .map_err(Error::AwsAuth)?;
-        generate_eks_credentials(
-            &credentials,
-            &input.region,
-            &input.cluster,
-            self.expires_in.as_ref(),
-        )
-        .map_err(Error::EksCreds)
+            .map_err(Error::AwsAuth)
     }
 }
 
@@ -104,9 +91,6 @@ impl From<config::AwsSsoConfig> for AwsSsoCredentialProvider {
                 .map(|d| Duration::from_std(d).expect("Config should be valid")),
             retry_interval: value
                 .retry_interval
-                .map(|d| Duration::from_std(d).expect("Config should be valid")),
-            expires_in: value
-                .expires_in
                 .map(|d| Duration::from_std(d).expect("Config should be valid")),
             max_attempts: value.max_attempts,
         }

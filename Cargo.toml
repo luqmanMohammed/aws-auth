@@ -1,5 +1,5 @@
 [package]
-name = "aws-sso-eks-auth"
+name = "aws-auth"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,6 +12,7 @@ aws-sigv4 = "1.2.3"
 aws-smithy-runtime-api = "1.7.1"
 base64 = "0.22.1"
 chrono = { version = "0.4.38", features = ["serde"] }
+clap = { version = "4.5.16", features = ["derive"] }
 home = "0.5.9"
 http = "1.1.0"
 serde = { version = "1.0", features = ["derive"] }

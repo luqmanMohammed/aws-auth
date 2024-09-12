@@ -1,69 +1,65 @@
-use std::collections::HashMap;
-use std::env;
-use std::fmt;
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
-pub struct Arguments {
-    pub account: String,
+#[derive(Parser)]
+#[command(about, version)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Commands,
+
+    /// AWS Account ID to authenticate against.
+    #[arg(short, long)]
+    pub account_id: String,
+
+    /// AWS IAM Role to assume during authentication.
+    #[arg(short, long)]
     pub role: String,
-    pub region: String,
-    pub cluster_name: String,
-    pub cache_dir: String,
+
+    /// Optional cache directory for storing authentication tokens.
+    /// If not provided, the default cache location will be used.
+    #[arg(short = 'd', long)]
+    pub cache_dir: Option<PathBuf>,
+
+    /// Optional config path to retrieve AWS SSO Config.
+    /// If not provided, the default config path will be used
+    #[arg(short = 'o', long)]
+    pub config_path: Option<PathBuf>,
+
+    /// Flag to ignore the cache and request new credentials even if cached ones are available.
+    /// Defaults to `false`.
+    #[arg(short, long, default_value_t = false)]
+    pub ignore_cache: bool,
 }
 
-#[derive(Debug)]
-pub enum CmdError {
-    MissingArgument(String),
-}
+#[derive(Subcommand)]
+pub enum Commands {
+    /// The `Eks` subcommand is used to print a valid Kubernetes authentication object
+    /// to be used with the Kubernetes external authentication process.
+    /// This is particularly useful when authenticating with an AWS EKS cluster.
+    Eks {
+        /// The name of the EKS cluster for which to generate the authentication object.
+        #[arg(short, long)]
+        cluster: String,
 
-impl fmt::Display for CmdError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CmdError::MissingArgument(argument) => {
-                writeln!(f, "Missing required argument: --{}", argument)
-            }
-        }
-    }
-}
-impl std::error::Error for CmdError {}
+        /// The AWS region where the specified EKS cluster is located.
+        #[arg(short, long)]
+        region: String,
 
-impl TryFrom<Vec<String>> for Arguments {
-    type Error = CmdError;
-    fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
-        let mut arg_map: HashMap<String, String> = HashMap::new();
-        let mut key: Option<String> = None;
-        for (i, arg) in value.into_iter().enumerate() {
-            if i % 2 == 0 && arg.starts_with("--") {
-                key = Some(arg[2..].to_string());
-            } else if let Some(k) = key.take() {
-                arg_map.insert(k, arg);
-            }
-        }
+        /// Optional cache directory for storing EKS authentication tokens.
+        /// If not specified, a default cache location is used.
+        #[arg(short, long)]
+        eks_cache_dir: Option<PathBuf>,
 
-        fn safe_get_arg<'a>(
-            arg_map: &'a HashMap<String, String>,
-            arg: &str,
-        ) -> Result<&'a String, CmdError> {
-            arg_map
-                .get(arg)
-                .ok_or_else(|| CmdError::MissingArgument(arg.to_string()))
-        }
+        #[arg(short = 's', long)]
+        eks_expiry_seconds: Option<usize>,
+    },
 
-        Ok(Arguments {
-            account: safe_get_arg(&arg_map, "account")?.to_string(),
-            role: safe_get_arg(&arg_map, "role")?.to_string(),
-            region: safe_get_arg(&arg_map, "region")?.to_string(),
-            cluster_name: safe_get_arg(&arg_map, "cluster-name")?.to_string(),
-            cache_dir: match arg_map.get("cache-dir") {
-                None => "/tmp",
-                Some(v) => v,
-            }
-            .to_string(),
-        })
-    }
-}
-
-impl Arguments {
-    pub fn from_env_args() -> Result<Arguments, CmdError> {
-        Arguments::try_from(env::args().collect::<Vec<_>>()[1..].to_vec())
-    }
+    /// The `Eval` subcommand is used to print AWS environment variables.
+    /// These variables can be used in shell `eval` commands to set up
+    /// the AWS environment for subsequent commands or scripts.
+    Eval {
+        /// The AWS region to export as default and selected region
+        #[arg(short, long, default_value_t=String::from("eu-west-2"))]
+        region: String,
+    },
 }

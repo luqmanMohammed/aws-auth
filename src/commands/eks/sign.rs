@@ -1,7 +1,3 @@
-use crate::types::{
-    K8sExecCredentials, K8sExecCredentialsStatus, DEFAULT_EXEC_CREDENTIALS_API_VERSION,
-    DEFAULT_EXEC_CREDENTIALS_KIND,
-};
 use aws_config::Region;
 use aws_sdk_ssooidc::config::Credentials;
 use aws_sigv4::http_request::{
@@ -22,6 +18,28 @@ const DEFAULT_EXPIRTY: Duration = Duration::seconds(860);
 pub enum Error {
     FailedToSign(SigningError),
     InvalidRequest(http::Error),
+}
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+pub const DEFAULT_EXEC_CREDENTIALS_KIND: &str = "ExecCredential";
+pub const DEFAULT_EXEC_CREDENTIALS_API_VERSION: &str = "client.authentication.k8s.io/v1beta1";
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct K8sExecCredentialsStatus {
+    #[serde(rename = "expirationTimestamp")]
+    pub expiration_timestamp: DateTime<Utc>,
+    pub token: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct K8sExecCredentials {
+    pub kind: String,
+    #[serde(rename = "apiVersion")]
+    pub api_version: String,
+    pub spec: HashMap<String, serde_json::Value>,
+    pub status: K8sExecCredentialsStatus,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

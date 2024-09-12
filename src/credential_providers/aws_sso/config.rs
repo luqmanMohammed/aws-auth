@@ -27,8 +27,6 @@ pub struct AwsSsoConfig {
     pub initial_delay: Option<Duration>,
     #[serde(alias = "retryInterval")]
     pub retry_interval: Option<Duration>,
-    #[serde(alias = "expiresIn")]
-    pub expires_in: Option<Duration>,
 }
 
 impl std::fmt::Display for Error {

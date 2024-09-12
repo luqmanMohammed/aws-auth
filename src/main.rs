@@ -1,16 +1,21 @@
 #![warn(unused_extern_crates)]
 
-mod cache;
 mod cmd;
+mod commands;
 mod credential_providers;
-mod types;
 mod utils;
 
-use cache::CacheManager;
-use cmd::Arguments;
+use aws_config::Region;
+use chrono::Duration;
+use clap::Parser;
+use cmd::{Cli, Commands};
+use commands::{
+    eks::{self, ExecEksInputs},
+    eval::{self, ExecEvalInputs},
+};
 use credential_providers::{
     aws_sso::{config::AwsSsoConfig, AwsSsoCredentialProvider},
-    provide_credentials, ProvideCredentialsInput,
+    ProvideCredentialsInput,
 };
 use std::error::Error;
 
@@ -20,27 +25,47 @@ fn error_to_string(error: impl Error) -> String {
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
-    let args = Arguments::from_env_args().map_err(error_to_string)?;
-    let cache_manager = CacheManager::new(&args);
+    let cli = Cli::parse();
 
-    let credential_provider: AwsSsoCredentialProvider = AwsSsoConfig::load_config(None)
-        .map_err(error_to_string)?
-        .into();
+    let credential_provider: AwsSsoCredentialProvider =
+        AwsSsoConfig::load_config(cli.config_path.as_deref())
+            .map_err(error_to_string)?
+            .into();
 
-    let exec_creds = if let Some(hit) = cache_manager.resolve_cache_hit() {
-        hit
-    } else {
-        let creds = provide_credentials(credential_provider, &ProvideCredentialsInput::from(args))
-            .await
-            .map_err(error_to_string)?;
-
-        let string_creds = serde_json::to_string(&creds).map_err(error_to_string)?;
-        cache_manager
-            .cache_credentials(&string_creds)
-            .map_err(error_to_string)?;
-        string_creds
+    let provider_input = ProvideCredentialsInput {
+        account_id: cli.account_id,
+        role: cli.role,
+        ignore_cache: cli.ignore_cache,
+        cache_dir: cli.cache_dir,
     };
 
-    println!("{}", exec_creds);
+    match cli.command {
+        Commands::Eks {
+            cluster,
+            region,
+            eks_cache_dir,
+            eks_expiry_seconds,
+        } => eks::exec_eks(
+            credential_provider,
+            &provider_input,
+            ExecEksInputs {
+                cluster,
+                region: Region::new(region),
+                eks_cache_dir,
+                expiry: eks_expiry_seconds.map(|v| Duration::seconds(v as i64)),
+            },
+        )
+        .await
+        .map_err(error_to_string)?,
+        Commands::Eval { region } => eval::exec_eval(
+            credential_provider,
+            provider_input,
+            ExecEvalInputs {
+                region: Region::new(region),
+            },
+        )
+        .await
+        .map_err(error_to_string)?,
+    }
     Ok(())
 }

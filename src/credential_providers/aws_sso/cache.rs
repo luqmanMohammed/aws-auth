@@ -1,4 +1,5 @@
 use crate::credential_providers::aws_sso::types::{ClientInformation, CredentialsWrapper};
+
 use aws_sdk_ssooidc::config::Credentials;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -148,9 +149,10 @@ pub trait CacheManager {
 pub mod mono_json {
     use crate::credential_providers::aws_sso::cache::Cache;
     use crate::credential_providers::aws_sso::cache::CacheManager;
-    use crate::utils::resolve_awssso_home;
+    use crate::utils;
     use std::fs::File;
     use std::path::{Path, PathBuf};
+
 
     #[derive(Debug)]
     pub enum Error {
@@ -175,12 +177,8 @@ pub mod mono_json {
     }
 
     impl MonoJsonCacheManager {
-        pub fn new(cache_path: Option<&Path>) -> Self {
-            let cache_path = match cache_path {
-                Some(cp) => cp.to_path_buf(),
-                None => resolve_awssso_home(None).join("cache.json"),
-            };
-
+        pub fn new(cache_dir: Option<&Path>) -> Self {
+            let cache_path = utils::resolve_awssso_home(cache_dir).join("cache.json");
             Self {
                 cache: Cache::default(),
                 cache_path,
