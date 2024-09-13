@@ -42,7 +42,8 @@ pub enum Commands {
         cluster: String,
 
         /// The AWS region where the specified EKS cluster is located.
-        #[arg(short, long)]
+        /// If not provided, it defaults to `eu-west-2`.
+        #[arg(short, long, default_value_t=String::from("eu-west-2"))]
         region: String,
 
         /// Optional cache directory for storing EKS authentication tokens.
@@ -58,8 +59,27 @@ pub enum Commands {
     /// These variables can be used in shell `eval` commands to set up
     /// the AWS environment for subsequent commands or scripts.
     Eval {
-        /// The AWS region to export as default and selected region
+        /// The AWS region to export as default and selected region.
+        /// If not provided, it defaults to `eu-west-2`.
         #[arg(short, long, default_value_t=String::from("eu-west-2"))]
         region: String,
     },
+
+    /// The `Exec` subcommand is used to execute the provided command
+    /// with AWS credentials.
+    /// This allows you to execute external commands such as AWS CLI commands
+    /// with the appropriate AWS credentials.
+    Exec {
+        /// The AWS region to be exported as the default and selected region
+        /// for the command execution. If not provided, it defaults to `eu-west-2`.
+        #[arg(short, long, default_value_t = String::from("eu-west-2"))]
+        #[arg(short, long, default_value_t=String::from("eu-west-2"))]
+        region: String,
+        
+        /// The command and its arguments to be executed with the AWS credentials.
+        /// You must provide the command after `--`.
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
+    },
 }
+

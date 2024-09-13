@@ -12,6 +12,7 @@ use cmd::{Cli, Commands};
 use commands::{
     eks::{self, ExecEksInputs},
     eval::{self, ExecEvalInputs},
+    exec::{self, ExecExecInputs},
 };
 use credential_providers::{
     aws_sso::{config::AwsSsoConfig, AwsSsoCredentialProvider},
@@ -62,6 +63,16 @@ async fn main() -> Result<(), String> {
             provider_input,
             ExecEvalInputs {
                 region: Region::new(region),
+            },
+        )
+        .await
+        .map_err(error_to_string)?,
+        Commands::Exec { region, args } => exec::exec_exec(
+            credential_provider,
+            provider_input,
+            ExecExecInputs {
+                region: Region::new(region),
+                arguemnts: args,
             },
         )
         .await
