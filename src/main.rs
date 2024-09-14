@@ -18,65 +18,85 @@ use credential_providers::{
     aws_sso::{config::AwsSsoConfig, AwsSsoCredentialProvider},
     ProvideCredentialsInput,
 };
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 fn error_to_string(error: impl Error) -> String {
     error.to_string()
 }
 
+fn build_credential_provider(
+    config_path: Option<&Path>,
+) -> Result<AwsSsoCredentialProvider, String> {
+    let credential_provider: AwsSsoCredentialProvider = AwsSsoConfig::load_config(config_path)
+        .map_err(error_to_string)?
+        .into();
+    Ok(credential_provider)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), String> {
     let cli = Cli::parse();
-
-    let credential_provider: AwsSsoCredentialProvider =
-        AwsSsoConfig::load_config(cli.config_path.as_deref())
-            .map_err(error_to_string)?
-            .into();
-
-    let provider_input = ProvideCredentialsInput {
-        account_id: cli.account_id,
-        role: cli.role,
-        ignore_cache: cli.ignore_cache,
-        cache_dir: cli.cache_dir,
-    };
-
     match cli.command {
         Commands::Eks {
+            common,
             cluster,
-            region,
             eks_cache_dir,
             eks_expiry_seconds,
-        } => eks::exec_eks(
-            credential_provider,
-            &provider_input,
-            ExecEksInputs {
-                cluster,
-                region: Region::new(region),
-                eks_cache_dir,
-                expiry: eks_expiry_seconds.map(|v| Duration::seconds(v as i64)),
-            },
-        )
-        .await
-        .map_err(error_to_string)?,
-        Commands::Eval { region } => eval::exec_eval(
-            credential_provider,
-            provider_input,
-            ExecEvalInputs {
-                region: Region::new(region),
-            },
-        )
-        .await
-        .map_err(error_to_string)?,
-        Commands::Exec { region, args } => exec::exec_exec(
-            credential_provider,
-            provider_input,
-            ExecExecInputs {
-                region: Region::new(region),
-                arguemnts: args,
-            },
-        )
-        .await
-        .map_err(error_to_string)?,
+        } => {
+            let credential_provider = build_credential_provider(common.config_path.as_deref())?;
+            eks::exec_eks(
+                credential_provider,
+                &ProvideCredentialsInput {
+                    account: common.account,
+                    role: common.role,
+                    ignore_cache: common.ignore_cache,
+                    cache_dir: common.cache_dir,
+                },
+                ExecEksInputs {
+                    cluster,
+                    eks_cache_dir,
+                    region: Region::new(common.region),
+                    expiry: eks_expiry_seconds.map(|v| Duration::seconds(v as i64)),
+                },
+            )
+            .await
+            .map_err(error_to_string)?;
+        }
+        Commands::Eval { common } => {
+            let credential_provider = build_credential_provider(common.config_path.as_deref())?;
+            eval::exec_eval(
+                credential_provider,
+                &ProvideCredentialsInput {
+                    account: common.account,
+                    role: common.role,
+                    ignore_cache: common.ignore_cache,
+                    cache_dir: common.cache_dir,
+                },
+                ExecEvalInputs {
+                    region: Region::new(common.region),
+                },
+            )
+            .await
+            .map_err(error_to_string)?;
+        }
+        Commands::Exec { common, arguments } => {
+            let credential_provider = build_credential_provider(common.config_path.as_deref())?;
+            exec::exec_exec(
+                credential_provider,
+                &ProvideCredentialsInput {
+                    account: common.account,
+                    role: common.role,
+                    ignore_cache: common.ignore_cache,
+                    cache_dir: common.cache_dir,
+                },
+                ExecExecInputs {
+                    region: Region::new(common.region),
+                    arguments,
+                },
+            )
+            .await
+            .map_err(error_to_string)?;
+        }
     }
     Ok(())
 }

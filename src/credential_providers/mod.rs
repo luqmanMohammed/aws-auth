@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use aws_sdk_sso::config::Credentials;
 
 pub struct ProvideCredentialsInput {
-    pub account_id: String,
+    pub account: String,
     pub role: String,
     pub ignore_cache: bool,
     pub cache_dir: Option<PathBuf>

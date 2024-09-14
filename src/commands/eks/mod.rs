@@ -50,7 +50,7 @@ pub async fn exec_eks<P: ProvideCredentials>(
     exec_inputs: ExecEksInputs,
 ) -> Result<P::Error> {
     let cache_manager = cache::CacheManager::new(&CacheManagerInputs {
-        account_id: &provider_inputs.account_id,
+        account_id: &provider_inputs.account,
         role: &provider_inputs.role,
         cluster: &exec_inputs.cluster,
         region: &exec_inputs.region,
