@@ -11,11 +11,11 @@ pub type Result<PE> = std::result::Result<(), PE>;
 
 pub async fn exec_eval<P: ProvideCredentials>(
     credentials_provider: P,
-    provider_input: ProvideCredentialsInput,
+    provider_input: &ProvideCredentialsInput,
     exec_inputs: ExecEvalInputs,
 ) -> Result<P::Error> {
     let credentials = credentials_provider
-        .provide_credentials(&provider_input)
+        .provide_credentials(provider_input)
         .await?;
 
     println!("export AWS_ACCESS_KEY_ID='{}'", credentials.access_key_id());

@@ -8,7 +8,7 @@ use crate::credential_providers::{ProvideCredentials, ProvideCredentialsInput};
 
 pub struct ExecExecInputs {
     pub region: Region,
-    pub arguemnts: Vec<String>,
+    pub arguments: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -40,19 +40,19 @@ pub type Result<PE> = std::result::Result<(), Error<PE>>;
 
 pub async fn exec_exec<P: ProvideCredentials>(
     credentials_provider: P,
-    provider_input: ProvideCredentialsInput,
+    provider_input: &ProvideCredentialsInput,
     exec_inputs: ExecExecInputs,
 ) -> Result<P::Error> {
     let credentials = credentials_provider
-        .provide_credentials(&provider_input)
+        .provide_credentials(provider_input)
         .await
         .map_err(Error::Provider)?;
 
     let program = exec_inputs
-        .arguemnts
+        .arguments
         .first()
         .ok_or(Error::InvalidCommand("Missing Program".to_string()))?;
-    let args = &(exec_inputs.arguemnts)[1..];
+    let args = &(exec_inputs.arguments)[1..];
 
     let mut envs = HashMap::new();
 
