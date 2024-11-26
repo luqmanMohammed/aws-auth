@@ -16,6 +16,7 @@ struct K8sExecCredentialStatus {
 }
 
 pub struct CacheManager {
+    cache_dir: PathBuf,
     cache_path: PathBuf,
 }
 
@@ -41,7 +42,10 @@ impl CacheManager {
         cache_path.push(args.cache_dir);
         cache_path.push(cache_file_name);
 
-        Self { cache_path }
+        Self {
+            cache_dir: args.cache_dir.to_path_buf(),
+            cache_path,
+        }
     }
 
     pub fn resolve_cache_hit(&self) -> Option<String> {
@@ -63,6 +67,7 @@ impl CacheManager {
     }
 
     pub fn cache_credentials(&self, creds: &str) -> Result<(), std::io::Error> {
+        fs::create_dir_all(&self.cache_dir)?;
         fs::write(&self.cache_path, creds)
     }
 }

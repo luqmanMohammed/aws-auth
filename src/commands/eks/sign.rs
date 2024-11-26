@@ -66,6 +66,16 @@ pub fn generate_eks_credentials(
     expires_in: Option<&Duration>,
 ) -> Result<K8sExecCredentials> {
     let expires_in = expires_in.unwrap_or(&DEFAULT_EXPIRTY);
+    let credential_expiry = credentials
+        .expiry()
+        .map_or(Utc::now() + *expires_in, |cx_st| {
+            let cx_dt: DateTime<Utc> = cx_st.into();
+            if cx_dt < Utc::now() + *expires_in {
+                cx_dt
+            } else {
+                Utc::now() + *expires_in
+            }
+        });
 
     let mut settings = SigningSettings::default();
     settings.expires_in = Some(expires_in.to_std().unwrap());
@@ -83,10 +93,8 @@ pub fn generate_eks_credentials(
         .build()
         .expect("there should not be any build errors");
 
-    let uri = format!(
-        "https://sts.{region}.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15",
-        region = region
-    );
+    let uri =
+        format!("https://sts.{region}.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15");
 
     let request = SignableRequest::new(
         "GET",
@@ -113,7 +121,7 @@ pub fn generate_eks_credentials(
         api_version: DEFAULT_EXEC_CREDENTIALS_API_VERSION.to_string(),
         spec: HashMap::new(),
         status: K8sExecCredentialsStatus {
-            expiration_timestamp: chrono::Utc::now() + *expires_in,
+            expiration_timestamp: credential_expiry,
             token: format!("{}.{}", TOKEN_PREFIX, encoded_url.trim_end_matches('=')),
         },
     })
