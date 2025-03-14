@@ -7,7 +7,8 @@ pub struct ProvideCredentialsInput {
     pub account: String,
     pub role: String,
     pub ignore_cache: bool,
-    pub cache_dir: Option<PathBuf>
+    pub cache_dir: Option<PathBuf>,
+    pub refresh_sts_token: bool,
 }
 
 pub trait ProvideCredentials {

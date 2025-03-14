@@ -75,7 +75,7 @@ impl ProvideCredentials for AwsSsoCredentialProvider {
             input.ignore_cache,
         );
         auth_manager
-            .assume_role(&input.account, &input.role)
+            .assume_role(&input.account, &input.role, input.refresh_sts_token)
             .await
             .map_err(Error::AwsAuth)
     }

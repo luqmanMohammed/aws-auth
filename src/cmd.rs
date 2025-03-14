@@ -33,6 +33,11 @@ pub struct CommonArgs {
     #[arg(short, long, default_value_t = false)]
     pub ignore_cache: bool,
 
+    /// Flag to refresh the session token even if it is still valid.
+    /// Defaults to `false`.
+    #[arg(short = 't', long, default_value_t = false)]
+    pub refresh_sts_token: bool,
+
     /// The AWS region to export as default and selected region.
     /// If not provided, it defaults to `eu-west-2`.
     #[arg(short='g', long, default_value_t=String::from("eu-west-2"))]
@@ -85,3 +90,4 @@ pub enum Commands {
         arguments: Vec<String>,
     },
 }
+

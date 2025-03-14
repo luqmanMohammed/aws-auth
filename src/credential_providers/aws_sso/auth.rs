@@ -121,6 +121,7 @@ where
         &mut self,
         account_id: &str,
         role_name: &str,
+        refresh_sts_token: bool,
     ) -> Result<Credentials, C::Error> {
         self.load_cache();
 
@@ -137,7 +138,9 @@ where
             self.cache_manager.clear_sessions();
         }
 
-        let credentials = if let Some(cached_credentials) =
+        let credentials = if refresh_sts_token {
+            self.resolve_credentials(role_name, account_id).await?
+        } else if let Some(cached_credentials) =
             self.cache_manager.get_session(account_id, role_name)
         {
             Credentials::from(cached_credentials.clone())

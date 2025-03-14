@@ -51,6 +51,7 @@ async fn main() -> Result<(), String> {
                     role: common.role,
                     ignore_cache: common.ignore_cache,
                     cache_dir: common.cache_dir,
+                    refresh_sts_token: common.refresh_sts_token,
                 },
                 ExecEksInputs {
                     cluster,
@@ -71,6 +72,7 @@ async fn main() -> Result<(), String> {
                     role: common.role,
                     ignore_cache: common.ignore_cache,
                     cache_dir: common.cache_dir,
+                    refresh_sts_token: common.refresh_sts_token,
                 },
                 ExecEvalInputs {
                     region: Region::new(common.region),
@@ -88,6 +90,7 @@ async fn main() -> Result<(), String> {
                     role: common.role,
                     ignore_cache: common.ignore_cache,
                     cache_dir: common.cache_dir,
+                    refresh_sts_token: common.refresh_sts_token,
                 },
                 ExecExecInputs {
                     region: Region::new(common.region),
