@@ -4,7 +4,6 @@ mod sign;
 use crate::credential_providers::{
     provide_credentials, ProvideCredentials, ProvideCredentialsInput,
 };
-use crate::utils;
 use aws_config::Region;
 use cache::CacheManagerInputs;
 use chrono::TimeDelta;
@@ -54,10 +53,11 @@ pub async fn exec_eks<P: ProvideCredentials>(
         role: &provider_inputs.role,
         cluster: &exec_inputs.cluster,
         region: &exec_inputs.region,
-        cache_dir: exec_inputs
+        cache_dir: &exec_inputs
             .eks_cache_dir
-            .unwrap_or(utils::resolve_awssso_home(None).join("eks"))
-            .as_ref(),
+            .as_deref()
+            .unwrap_or(&provider_inputs.config_dir)
+            .join("eks"),
     });
 
     let exec_creds = if let Some(hit) = cache_manager.resolve_cache_hit() {

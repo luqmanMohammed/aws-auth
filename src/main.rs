@@ -13,43 +13,55 @@ use commands::{
     eks::{self, ExecEksInputs},
     eval::{self, ExecEvalInputs},
     exec::{self, ExecExecInputs},
+    init::{self, ExecInitInputs},
 };
-use credential_providers::{
-    aws_sso::{config::AwsSsoConfig, AwsSsoCredentialProvider},
-    ProvideCredentialsInput,
-};
-use std::{error::Error, path::Path};
+use credential_providers::{build_credential_provider, ProvideCredentialsInput};
+use std::error::Error;
 
 fn error_to_string(error: impl Error) -> String {
     error.to_string()
-}
-
-fn build_credential_provider(
-    config_path: Option<&Path>,
-) -> Result<AwsSsoCredentialProvider, String> {
-    let credential_provider: AwsSsoCredentialProvider = AwsSsoConfig::load_config(config_path)
-        .map_err(error_to_string)?
-        .into();
-    Ok(credential_provider)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
     let cli = Cli::parse();
     match cli.command {
+        Commands::Init {
+            sso_start_url,
+            sso_region,
+            max_attempts,
+            initial_delay_secounds,
+            retry_interval_secounds,
+            config_dir,
+            recreate,
+        } => {
+            init::exec_init(ExecInitInputs {
+                config_dir,
+                recreate,
+                sso_start_url,
+                sso_region,
+                max_attempts,
+                initial_delay: initial_delay_secounds.map(std::time::Duration::from_secs),
+                retry_interval: retry_interval_secounds.map(std::time::Duration::from_secs),
+            })
+            .map_err(error_to_string)?;
+        }
         Commands::Eks {
             common,
             cluster,
             eks_cache_dir,
             eks_expiry_seconds,
         } => {
-            let credential_provider = build_credential_provider(common.config_path.as_deref())?;
+            let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
+            let credential_provider =
+                build_credential_provider(&config_dir).map_err(error_to_string)?;
             eks::exec_eks(
                 credential_provider,
                 &ProvideCredentialsInput {
                     account: common.account,
                     role: common.role,
                     ignore_cache: common.ignore_cache,
+                    config_dir,
                     cache_dir: common.cache_dir,
                     refresh_sts_token: common.refresh_sts_token,
                 },
@@ -64,13 +76,16 @@ async fn main() -> Result<(), String> {
             .map_err(error_to_string)?;
         }
         Commands::Eval { common } => {
-            let credential_provider = build_credential_provider(common.config_path.as_deref())?;
+            let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
+            let credential_provider =
+                build_credential_provider(&config_dir).map_err(error_to_string)?;
             eval::exec_eval(
                 credential_provider,
                 &ProvideCredentialsInput {
                     account: common.account,
                     role: common.role,
                     ignore_cache: common.ignore_cache,
+                    config_dir,
                     cache_dir: common.cache_dir,
                     refresh_sts_token: common.refresh_sts_token,
                 },
@@ -82,13 +97,16 @@ async fn main() -> Result<(), String> {
             .map_err(error_to_string)?;
         }
         Commands::Exec { common, arguments } => {
-            let credential_provider = build_credential_provider(common.config_path.as_deref())?;
+            let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
+            let credential_provider =
+                build_credential_provider(&config_dir).map_err(error_to_string)?;
             exec::exec_exec(
                 credential_provider,
                 &ProvideCredentialsInput {
                     account: common.account,
                     role: common.role,
                     ignore_cache: common.ignore_cache,
+                    config_dir,
                     cache_dir: common.cache_dir,
                     refresh_sts_token: common.refresh_sts_token,
                 },

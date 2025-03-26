@@ -149,10 +149,8 @@ pub trait CacheManager {
 pub mod mono_json {
     use crate::credential_providers::aws_sso::cache::Cache;
     use crate::credential_providers::aws_sso::cache::CacheManager;
-    use crate::utils;
     use std::fs::File;
     use std::path::{Path, PathBuf};
-
 
     #[derive(Debug)]
     pub enum Error {
@@ -177,11 +175,10 @@ pub mod mono_json {
     }
 
     impl MonoJsonCacheManager {
-        pub fn new(cache_dir: Option<&Path>) -> Self {
-            let cache_path = utils::resolve_awssso_home(cache_dir).join("cache.json");
+        pub fn new(cache_dir: &Path) -> Self {
             Self {
                 cache: Cache::default(),
-                cache_path,
+                cache_path: cache_dir.join("cache.json"),
             }
         }
     }

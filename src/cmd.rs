@@ -25,8 +25,8 @@ pub struct CommonArgs {
 
     /// Optional config path to retrieve AWS SSO Config.
     /// If not provided, the default config path will be used
-    #[arg(short = 'o', long)]
-    pub config_path: Option<PathBuf>,
+    #[arg(short = 'o', long, env = "AWS_AUTH_CONFIG_PATH")]
+    pub config_dir: Option<PathBuf>,
 
     /// Flag to ignore the cache and request new credentials even if cached ones are available.
     /// Defaults to `false`.
@@ -46,6 +46,33 @@ pub struct CommonArgs {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// The `Init` subcommand is used to initialize the AWS SSO configuration.
+    /// The configuration will be saved to the default configuration file location, or the location specified by the user.
+    /// If the configuration directory already exists, the user can choose to recreate it.
+    /// Default configuration directory: `$HOME/.aws-auth`
+    Init {
+        /// The SSO start URL for the AWS account.
+        #[arg(short, long)]
+        sso_start_url: String,
+        /// The AWS region where the SSO service is hosted.
+        #[arg(short = 'r', long)]
+        sso_region: String,
+        /// The maximum number of attempts to authenticate with AWS SSO.
+        #[arg(short, long)]
+        max_attempts: Option<usize>,
+        /// The initial delay in secounds before retrying the authentication process.
+        #[arg(short, long)]
+        initial_delay_secounds: Option<u64>,
+        /// The retry interval in secounds between each authentication attempt.
+        #[arg(short = 't', long)]
+        retry_interval_secounds: Option<u64>,
+        /// Optional directory to store the AWS SSO configuration. If not provided, the default directory will be used.
+        #[arg(short, long)]
+        config_dir: Option<PathBuf>,
+        /// Flag to recreate the configuration directory if it already exists.
+        #[arg(short = 'e', long, default_value_t = false)]
+        recreate: bool,
+    },
     /// The `Eks` subcommand is used to print a valid Kubernetes authentication object
     /// to be used with the Kubernetes external authentication process.
     /// This is particularly useful when authenticating with an AWS EKS cluster.
@@ -90,4 +117,3 @@ pub enum Commands {
         arguments: Vec<String>,
     },
 }
-

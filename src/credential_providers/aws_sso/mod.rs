@@ -63,7 +63,8 @@ impl ProvideCredentials for AwsSsoCredentialProvider {
         self,
         input: &ProvideCredentialsInput,
     ) -> Result<Credentials, Self::Error> {
-        let cache_manager: CacheManager = MonoJsonCacheManager::new(input.cache_dir.as_deref());
+        let cache_dir = input.cache_dir.as_deref().unwrap_or(&input.config_dir);
+        let cache_manager: CacheManager = MonoJsonCacheManager::new(cache_dir);
         let mut auth_manager = AuthManager::new(
             cache_manager,
             self.start_url,
