@@ -8,39 +8,60 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(Args)]
-pub struct CommonArgs {
+// Common
+const ARG_SHORT_ACCOUNT: char = 'a';
+const ARG_SHORT_ROLE: char = 'r';
+const ARG_SHORT_ALIAS: char = 'l';
+const ARG_SHORT_CONFIG_DIR: char = 'o';
+const ARG_SHORT_IGNORE_CACHE: char = 'i';
+const ARG_SHORT_REFRESH_STS_TOKEN: char = 't';
+const ARG_SHORT_REGION: char = 'g';
+// Eks
+const ARG_SHORT_CLUSTER: char = 'c';
+
+#[derive(Args, Clone)]
+#[group(required = true, multiple = true)]
+pub struct AssumeInput {
     /// AWS Account ID to authenticate against.
-    #[arg(short, long)]
-    pub account: String,
+    #[arg(short = ARG_SHORT_ACCOUNT, long, requires="role", conflicts_with="alias")]
+    pub account: Option<String>,
 
     /// AWS IAM Role to assume during authentication.
-    #[arg(short, long)]
-    pub role: String,
+    #[arg(short = ARG_SHORT_ROLE, long, requires="account", conflicts_with="alias")]
+    pub role: Option<String>,
+
+    #[arg(short = ARG_SHORT_ALIAS, long, conflicts_with="account", conflicts_with="role")]
+    pub alias: Option<String>,
+}
+
+#[derive(Args)]
+pub struct CommonArgs {
+    #[command(flatten)]
+    pub assume_input: AssumeInput,
 
     /// Optional cache directory for storing authentication tokens.
     /// If not provided, the default cache location will be used.
-    #[arg(short = 'd', long)]
+    #[arg(long)]
     pub cache_dir: Option<PathBuf>,
 
-    /// Optional config path to retrieve AWS SSO Config.
+    /// Optional config path to retrieve AWS Auth Config.
     /// If not provided, the default config path will be used
-    #[arg(short = 'o', long, env = "AWS_AUTH_CONFIG_PATH")]
+    #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
     pub config_dir: Option<PathBuf>,
 
     /// Flag to ignore the cache and request new credentials even if cached ones are available.
     /// Defaults to `false`.
-    #[arg(short, long, default_value_t = false)]
+    #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
 
     /// Flag to refresh the session token even if it is still valid.
     /// Defaults to `false`.
-    #[arg(short = 't', long, default_value_t = false)]
+    #[arg(short = ARG_SHORT_REFRESH_STS_TOKEN, long, default_value_t = false)]
     pub refresh_sts_token: bool,
 
     /// The AWS region to export as default and selected region.
     /// If not provided, it defaults to `eu-west-2`.
-    #[arg(short='g', long, default_value_t=String::from("eu-west-2"))]
+    #[arg(short = ARG_SHORT_REGION, long, default_value_t=String::from("eu-west-2"))]
     pub region: String,
 }
 
@@ -81,17 +102,17 @@ pub enum Commands {
         common: CommonArgs,
 
         /// The name of the EKS cluster for which to generate the authentication object.
-        #[arg(short, long)]
+        #[arg(short = ARG_SHORT_CLUSTER, long)]
         cluster: String,
 
         /// Optional cache directory for storing EKS authentication tokens.
         /// If not specified, a default cache location is used.
-        #[arg(short, long)]
+        #[arg(long)]
         eks_cache_dir: Option<PathBuf>,
 
         /// Optional EKS auth token TTL in secounds.
         /// If not specified, default value of `900` secounds (15m) will be used.
-        #[arg(short = 's', long)]
+        #[arg(long)]
         eks_expiry_seconds: Option<usize>,
     },
 
@@ -115,5 +136,49 @@ pub enum Commands {
         /// You must provide the command after `--`.
         #[arg(trailing_var_arg = true)]
         arguments: Vec<String>,
+    },
+
+    /// The `Alias` subcommand is used to manage AWS account aliases.
+    /// You can set, unset, or list account aliases.
+    Alias {
+        #[clap(subcommand)]
+        subcommand: Alias,
+    },
+}
+
+#[derive(Args)]
+pub struct AliasCommonArgs {
+    /// Optional config path to retrieve AWS Auth Config.
+    /// If not provided, the default config path will be used
+    #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
+    pub config_dir: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+pub enum Alias {
+    /// The `Set` subcommand is used to set an alias for a specific AWS account and role.
+    /// This allows you to easily reference AWS accounts and roles using a friendly name
+    /// instead of the full account ID and role name.
+    Set {
+        #[clap(flatten)]
+        common: AliasCommonArgs,
+        alias: String,
+        /// AWS Account ID to map to the alias
+        #[arg(short = ARG_SHORT_ACCOUNT, long)]
+        account: String,
+        /// AWS IAM Role name to map to the alias
+        #[arg(short = ARG_SHORT_ROLE, long)]
+        role: String,
+    },
+    /// The `Unset` subcommand is used to remove an alias for a specific AWS account and role.
+    Unset {
+        #[clap(flatten)]
+        common: AliasCommonArgs,
+        alias: String,
+    },
+    /// The `List` subcommand is used to list all aliases for AWS accounts and roles.
+    List {
+        #[clap(flatten)]
+        common: AliasCommonArgs,
     },
 }

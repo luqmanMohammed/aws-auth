@@ -1,3 +1,6 @@
+use crate::alias_providers::AliasProvider;
+use crate::cmd::{AssumeInput, CommonArgs};
+use crate::common::AssumeIdentifier;
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -9,4 +12,29 @@ pub fn resolve_config_dir(config_dir: Option<&Path>) -> PathBuf {
         },
         PathBuf::from,
     )
+}
+
+pub fn resolve_assume_identifier<'c, 'p: 'c, A: AliasProvider>(
+    provider: &'p mut A,
+    common: &'c CommonArgs,
+) -> Result<AssumeIdentifier<'c>, A::Error> {
+    match &common.assume_input {
+        AssumeInput {
+            account: Some(a),
+            role: Some(r),
+            alias: None,
+        } => Ok(AssumeIdentifier {
+            account: a,
+            role: r,
+        }),
+        AssumeInput {
+            account: None,
+            role: None,
+            alias: Some(l),
+        } => {
+            provider.load_aliases()?;
+            provider.get_alias(l)
+        }
+        _ => unreachable!("Clap should prevent code from reaching this branch"),
+    }
 }
