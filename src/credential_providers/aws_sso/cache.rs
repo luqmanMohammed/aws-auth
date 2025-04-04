@@ -26,7 +26,7 @@ pub trait CacheManager {
             .client_info
             .start_url
             .as_ref()
-            .map_or(false, |cache_start_url| start_url == cache_start_url)
+            .is_some_and(|cache_start_url| start_url == cache_start_url)
     }
 
     fn get_access_token(&self) -> Option<&str> {
