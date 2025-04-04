@@ -5,6 +5,9 @@ use crate::credential_providers::aws_sso::config::{AwsSsoConfig, Error as AwsSso
 use crate::credential_providers::aws_sso::AwsSsoCredentialProvider;
 use aws_sdk_sso::config::Credentials;
 
+pub type CredentialProvider = AwsSsoCredentialProvider;
+pub type CredentialProviderError = AwsSsoConfigError;
+
 pub struct ProvideCredentialsInput {
     pub account: String,
     pub role: String,
@@ -31,7 +34,7 @@ pub async fn provide_credentials<T: ProvideCredentials>(
 
 pub fn build_credential_provider(
     config_dir: &Path,
-) -> Result<AwsSsoCredentialProvider, AwsSsoConfigError> {
+) -> Result<CredentialProvider, CredentialProviderError> {
     let credential_provider: AwsSsoCredentialProvider =
         AwsSsoConfig::load_config(&config_dir.join("config.json"))?.into();
     Ok(credential_provider)

@@ -1,4 +1,4 @@
-use crate::alias_providers::AliasProvider;
+use crate::alias_providers::ProvideAliases;
 use crate::cmd::{AssumeInput, CommonArgs};
 use crate::common::AssumeIdentifier;
 use std::env;
@@ -14,7 +14,7 @@ pub fn resolve_config_dir(config_dir: Option<&Path>) -> PathBuf {
     )
 }
 
-pub fn resolve_assume_identifier<'c, 'p: 'c, A: AliasProvider>(
+pub fn resolve_assume_identifier<'c, 'p: 'c, A: ProvideAliases>(
     provider: &'p mut A,
     common: &'c CommonArgs,
 ) -> Result<AssumeIdentifier<'c>, A::Error> {

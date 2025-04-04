@@ -7,12 +7,13 @@ mod common;
 mod credential_providers;
 mod utils;
 
-use alias_providers::{build_alias_provider, build_alias_provider_and_load, AliasProvider};
+use alias_providers::build_alias_provider;
 use aws_config::Region;
 use chrono::Duration;
 use clap::Parser;
-use cmd::{Alias, Cli, Commands};
+use cmd::{Cli, Commands};
 use commands::{
+    alias::exec_alias,
     eks::{self, ExecEksInputs},
     eval::{self, ExecEvalInputs},
     exec::{self, ExecExecInputs},
@@ -20,9 +21,41 @@ use commands::{
 };
 use credential_providers::{build_credential_provider, ProvideCredentialsInput};
 use std::error::Error;
+use std::path::Path;
 
 fn error_to_string(error: impl Error) -> String {
     error.to_string()
+}
+
+fn setup_providers(
+    config_dir: &Path,
+) -> Result<
+    (
+        credential_providers::CredentialProvider,
+        alias_providers::AliasProvider,
+    ),
+    String,
+> {
+    let credential_provider = build_credential_provider(config_dir).map_err(error_to_string)?;
+    let alias_provider = build_alias_provider(config_dir);
+    Ok((credential_provider, alias_provider))
+}
+
+fn build_credential_provider_inputs(
+    config_dir: &Path,
+    common: &cmd::CommonArgs,
+    mut alias_provider: alias_providers::AliasProvider,
+) -> Result<ProvideCredentialsInput, String> {
+    let assume_identifier =
+        utils::resolve_assume_identifier(&mut alias_provider, common).map_err(error_to_string)?;
+    Ok(ProvideCredentialsInput {
+        account: assume_identifier.account.to_string(),
+        role: assume_identifier.role.to_string(),
+        ignore_cache: common.ignore_cache,
+        config_dir: config_dir.to_path_buf(),
+        cache_dir: common.cache_dir.clone(),
+        refresh_sts_token: common.refresh_sts_token,
+    })
 }
 
 #[tokio::main]
@@ -56,21 +89,12 @@ async fn main() -> Result<(), String> {
             eks_expiry_seconds,
         } => {
             let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
-            let credential_provider =
-                build_credential_provider(&config_dir).map_err(error_to_string)?;
-            let mut alias_provider = build_alias_provider(&config_dir);
-            let assume_identifier = utils::resolve_assume_identifier(&mut alias_provider, &common)
-                .map_err(error_to_string)?;
+            let (credential_provider, alias_provider) = setup_providers(&config_dir)?;
+            let provider_inputs =
+                build_credential_provider_inputs(&config_dir, &common, alias_provider)?;
             eks::exec_eks(
                 credential_provider,
-                &ProvideCredentialsInput {
-                    account: assume_identifier.account.to_string(),
-                    role: assume_identifier.role.to_string(),
-                    ignore_cache: common.ignore_cache,
-                    config_dir,
-                    cache_dir: common.cache_dir,
-                    refresh_sts_token: common.refresh_sts_token,
-                },
+                &provider_inputs,
                 ExecEksInputs {
                     cluster,
                     eks_cache_dir,
@@ -83,21 +107,12 @@ async fn main() -> Result<(), String> {
         }
         Commands::Eval { common } => {
             let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
-            let credential_provider =
-                build_credential_provider(&config_dir).map_err(error_to_string)?;
-            let mut alias_provider = build_alias_provider(&config_dir);
-            let assume_identifier = utils::resolve_assume_identifier(&mut alias_provider, &common)
-                .map_err(error_to_string)?;
+            let (credential_provider, alias_provider) = setup_providers(&config_dir)?;
+            let provider_inputs =
+                build_credential_provider_inputs(&config_dir, &common, alias_provider)?;
             eval::exec_eval(
                 credential_provider,
-                &ProvideCredentialsInput {
-                    account: assume_identifier.account.to_string(),
-                    role: assume_identifier.role.to_string(),
-                    ignore_cache: common.ignore_cache,
-                    config_dir,
-                    cache_dir: common.cache_dir,
-                    refresh_sts_token: common.refresh_sts_token,
-                },
+                &provider_inputs,
                 ExecEvalInputs {
                     region: Region::new(common.region),
                 },
@@ -107,21 +122,12 @@ async fn main() -> Result<(), String> {
         }
         Commands::Exec { common, arguments } => {
             let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
-            let credential_provider =
-                build_credential_provider(&config_dir).map_err(error_to_string)?;
-            let mut alias_provider = build_alias_provider(&config_dir);
-            let assume_identifier = utils::resolve_assume_identifier(&mut alias_provider, &common)
-                .map_err(error_to_string)?;
+            let (credential_provider, alias_provider) = setup_providers(&config_dir)?;
+            let provider_inputs =
+                build_credential_provider_inputs(&config_dir, &common, alias_provider)?;
             exec::exec_exec(
                 credential_provider,
-                &ProvideCredentialsInput {
-                    account: assume_identifier.account.to_string(),
-                    role: assume_identifier.role.to_string(),
-                    ignore_cache: common.ignore_cache,
-                    config_dir,
-                    cache_dir: common.cache_dir,
-                    refresh_sts_token: common.refresh_sts_token,
-                },
+                &provider_inputs,
                 ExecExecInputs {
                     region: Region::new(common.region),
                     arguments,
@@ -130,39 +136,7 @@ async fn main() -> Result<(), String> {
             .await
             .map_err(error_to_string)?;
         }
-        Commands::Alias { subcommand } => match subcommand {
-            Alias::Set {
-                common,
-                alias,
-                account,
-                role,
-            } => {
-                let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
-                let mut alias_provider =
-                    build_alias_provider_and_load(&config_dir).map_err(error_to_string)?;
-                alias_provider
-                    .set_alias(&alias, &account, &role)
-                    .map_err(error_to_string)?;
-            }
-            Alias::Unset { common, alias } => {
-                let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
-                let mut alias_provider =
-                    build_alias_provider_and_load(&config_dir).map_err(error_to_string)?;
-                alias_provider
-                    .unset_alias(&alias)
-                    .map_err(error_to_string)?;
-            }
-            Alias::List { common } => {
-                let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
-                let alias_provider =
-                    build_alias_provider_and_load(&config_dir).map_err(error_to_string)?;
-                let aliases = alias_provider.list_aliases().map_err(error_to_string)?;
-                println!("\x1b[1m{:<25}\t{:<12}\tRole\x1b[0m", "Alias", "Account Id");
-                for (alias, account, role) in aliases.iter() {
-                    println!("{:<25}\t{}\t{}", alias, account, role);
-                }
-            }
-        },
+        Commands::Alias { subcommand } => exec_alias(subcommand).map_err(error_to_string)?,
     }
     Ok(())
 }

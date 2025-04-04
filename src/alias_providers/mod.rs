@@ -4,20 +4,25 @@ use crate::common::AssumeIdentifier;
 use json_alias_provider::JsonAliasProvider;
 use std::path::Path;
 
-pub trait AliasProvider {
+pub type AliasProvider = JsonAliasProvider;
+pub type AliasProviderError = io::Error;
+
+pub trait ProvideAliases {
     type Error;
+    fn get_alias(&self, alias: &str) -> Result<AssumeIdentifier, Self::Error>;
+    fn list_aliases(&self) -> Result<Vec<(&str, &str, &str)>, Self::Error>;
     fn load_aliases(&mut self) -> Result<(), Self::Error>;
     fn set_alias(&mut self, alias: &str, account: &str, role: &str) -> Result<(), Self::Error>;
     fn unset_alias(&mut self, alias: &str) -> Result<(), Self::Error>;
-    fn list_aliases(&self) -> Result<Vec<(&str, &str, &str)>, Self::Error>;
-    fn get_alias(&self, alias: &str) -> Result<AssumeIdentifier, Self::Error>;
 }
 
-pub fn build_alias_provider(config_dir: &Path) -> JsonAliasProvider {
+pub fn build_alias_provider(config_dir: &Path) -> AliasProvider {
     JsonAliasProvider::new(config_dir.join("aliases.json"))
 }
 
-pub fn build_alias_provider_and_load(config_dir: &Path) -> Result<JsonAliasProvider, io::Error> {
+pub fn build_alias_provider_and_load(
+    config_dir: &Path,
+) -> Result<AliasProvider, AliasProviderError> {
     let mut provider = JsonAliasProvider::new(config_dir.join("aliases.json"));
     provider.load_aliases()?;
     Ok(provider)
@@ -27,7 +32,7 @@ pub mod json_alias_provider {
 
     use serde::{Deserialize, Serialize};
 
-    use super::AliasProvider;
+    use super::ProvideAliases;
     use crate::common::AssumeIdentifier;
     use std::collections::HashMap;
     use std::fs::File;
@@ -61,7 +66,7 @@ pub mod json_alias_provider {
         }
     }
 
-    impl AliasProvider for JsonAliasProvider {
+    impl ProvideAliases for JsonAliasProvider {
         type Error = io::Error;
 
         fn load_aliases(&mut self) -> io::Result<()> {
