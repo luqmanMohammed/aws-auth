@@ -12,11 +12,11 @@ pub struct Cli {
 // Common
 const ARG_SHORT_ACCOUNT: char = 'a';
 const ARG_SHORT_ROLE: char = 'r';
-const ARG_SHORT_ALIAS: char = 'l';
-const ARG_SHORT_CONFIG_DIR: char = 'o';
+const ARG_SHORT_ALIAS: char = 'A';
+const ARG_SHORT_CONFIG_DIR: char = 'C';
 const ARG_SHORT_IGNORE_CACHE: char = 'i';
 const ARG_SHORT_REFRESH_STS_TOKEN: char = 't';
-const ARG_SHORT_REGION: char = 'g';
+const ARG_SHORT_REGION: char = 'R';
 // Eks
 const ARG_SHORT_CLUSTER: char = 'c';
 
