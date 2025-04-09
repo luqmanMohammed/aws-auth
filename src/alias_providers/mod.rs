@@ -8,9 +8,9 @@ pub type AliasProvider = JsonAliasProvider;
 pub type AliasProviderError = io::Error;
 
 pub trait ProvideAliases {
-    type Error;
-    fn get_alias(&self, alias: &str) -> Result<AssumeIdentifier, Self::Error>;
-    fn list_aliases(&self) -> Result<Vec<(&str, &str, &str)>, Self::Error>;
+    type Error: std::error::Error;
+    fn get_alias(&self, alias: &str) -> Result<Option<AssumeIdentifier>, Self::Error>;
+    fn list_aliases(&self) -> Result<Vec<[&str; 3]>, Self::Error>;
     fn load_aliases(&mut self) -> Result<(), Self::Error>;
     fn set_alias(&mut self, alias: &str, account: &str, role: &str) -> Result<(), Self::Error>;
     fn unset_alias(&mut self, alias: &str) -> Result<(), Self::Error>;
@@ -95,31 +95,25 @@ pub mod json_alias_provider {
             self.save_aliases()
         }
 
-        fn list_aliases(&self) -> Result<Vec<(&str, &str, &str)>, Self::Error> {
+        fn list_aliases(&self) -> Result<Vec<[&str; 3]>, Self::Error> {
             Ok(self
                 .aliases
                 .iter()
                 .map(|(alias, account_role)| {
-                    (
+                    [
                         alias.as_str(),
                         account_role.account.as_str(),
                         account_role.role.as_str(),
-                    )
+                    ]
                 })
                 .collect())
         }
 
-        fn get_alias(&self, alias: &str) -> Result<AssumeIdentifier, Self::Error> {
-            self.aliases
-                .get(alias)
-                .ok_or(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("Alias {} not found", alias),
-                ))
-                .map(|ar| AssumeIdentifier {
-                    account: &ar.account,
-                    role: &ar.role,
-                })
+        fn get_alias(&self, alias: &str) -> Result<Option<AssumeIdentifier>, Self::Error> {
+            Ok(self.aliases.get(alias).map(|a| AssumeIdentifier {
+                account: &a.account,
+                role: &a.role,
+            }))
         }
     }
 }

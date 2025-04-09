@@ -1,6 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
+/// CLI tool for AWS authentication and credential management
 #[derive(Parser)]
 #[command(about, version)]
 pub struct Cli {
@@ -19,23 +20,57 @@ const ARG_SHORT_REGION: char = 'g';
 // Eks
 const ARG_SHORT_CLUSTER: char = 'c';
 
+/// Output format for command results
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum OutputFormat {
+    /// JSON formatted output
+    Json,
+    /// Plain text formatted output
+    Text,
+}
+
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputFormat::Json => write!(f, "json"),
+            OutputFormat::Text => write!(f, "text"),
+        }
+    }
+}
+
+fn validate_account_id(s: &str) -> Result<String, String> {
+    if s.len() != 12 {
+        return Err(format!(
+            "AWS Account ID must be exactly 12 digits, got {}",
+            s.len()
+        ));
+    }
+    if !s.chars().all(|c| c.is_ascii_digit()) {
+        return Err("AWS Account ID must contain only digits".to_string());
+    }
+    Ok(s.to_string())
+}
+
 #[derive(Args, Clone)]
 #[group(required = true, multiple = true)]
 pub struct AssumeInput {
     /// AWS Account ID to authenticate against.
-    #[arg(short = ARG_SHORT_ACCOUNT, long, requires="role", conflicts_with="alias")]
+    #[arg(short = ARG_SHORT_ACCOUNT, long, requires="role", conflicts_with="alias", value_parser=validate_account_id)]
     pub account: Option<String>,
 
     /// AWS IAM Role to assume during authentication.
     #[arg(short = ARG_SHORT_ROLE, long, requires="account", conflicts_with="alias")]
     pub role: Option<String>,
 
+    /// Predefined alias for an account and role combination
     #[arg(short = ARG_SHORT_ALIAS, long, conflicts_with="account", conflicts_with="role")]
     pub alias: Option<String>,
 }
 
+/// Common arguments used across multiple commands
 #[derive(Args)]
 pub struct CommonArgs {
+    /// Input parameters for assuming an AWS role
     #[command(flatten)]
     pub assume_input: AssumeInput,
 
@@ -154,31 +189,49 @@ pub struct AliasCommonArgs {
     pub config_dir: Option<PathBuf>,
 }
 
+/// Subcommands for alias management
 #[derive(Subcommand)]
 pub enum Alias {
     /// The `Set` subcommand is used to set an alias for a specific AWS account and role.
     /// This allows you to easily reference AWS accounts and roles using a friendly name
     /// instead of the full account ID and role name.
     Set {
+        /// Common alias management arguments
         #[clap(flatten)]
         common: AliasCommonArgs,
+        /// The alias name to set
         alias: String,
         /// AWS Account ID to map to the alias
-        #[arg(short = ARG_SHORT_ACCOUNT, long)]
+        #[arg(short = ARG_SHORT_ACCOUNT, long, value_parser=validate_account_id)]
         account: String,
         /// AWS IAM Role name to map to the alias
         #[arg(short = ARG_SHORT_ROLE, long)]
         role: String,
+        /// Overwrite an alias if it already exits
+        #[arg(short = 'w', long, default_value_t = false)]
+        overwrite: bool,
     },
     /// The `Unset` subcommand is used to remove an alias for a specific AWS account and role.
     Unset {
+        /// Common alias management arguments
         #[clap(flatten)]
         common: AliasCommonArgs,
+        /// The alias name to remove
         alias: String,
     },
     /// The `List` subcommand is used to list all aliases for AWS accounts and roles.
     List {
+        /// Common alias management arguments
         #[clap(flatten)]
         common: AliasCommonArgs,
+        /// Format for the output list
+        #[arg(short = 'O', long, default_value_t = OutputFormat::Text)]
+        output: OutputFormat,
+        /// Flag to omit headers in the output
+        #[arg(short = 'n', long, default_value_t = false)]
+        no_headers: bool,
+        /// Fields to omit from the output
+        #[arg(short = 'i', long, value_delimiter = ',')]
+        omit_fields: Vec<String>,
     },
 }
