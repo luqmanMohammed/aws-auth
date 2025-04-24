@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::process::{Command, Stdio};
-
 use aws_config::Region;
-
 use crate::credential_providers::{ProvideCredentials, ProvideCredentialsInput};
 
 pub struct ExecExecInputs {

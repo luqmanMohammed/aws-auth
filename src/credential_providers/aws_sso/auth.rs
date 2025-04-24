@@ -2,6 +2,9 @@ use crate::credential_providers::aws_sso::cache::CacheManager;
 use crate::credential_providers::aws_sso::types::ClientInformation;
 use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
 use aws_sdk_sso::operation::get_role_credentials::GetRoleCredentialsError;
+use aws_sdk_sso::operation::list_account_roles::ListAccountRolesError;
+use aws_sdk_sso::operation::list_accounts::ListAccountsError;
+use aws_sdk_sso::types::{AccountInfo, RoleInfo};
 use aws_sdk_sso::Client as SsoClient;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenError;
 use aws_sdk_ssooidc::operation::register_client::RegisterClientError;
@@ -29,6 +32,8 @@ pub enum Error<CE: 'static + std::error::Error + std::fmt::Debug> {
     OidcCreateToken(SdkError<CreateTokenError, Response>),
     OidcTokenRefreshFailed(SdkError<CreateTokenError, Response>),
     SsoGetRoleCredentials(SdkError<GetRoleCredentialsError, Response>),
+    OidcListAccounts(SdkError<ListAccountsError, Response>),
+    OidcListAccountRoles(SdkError<ListAccountRolesError, Response>),
     Cache(CE),
 }
 
@@ -50,6 +55,12 @@ impl<CE: 'static + std::error::Error + std::fmt::Debug> std::fmt::Display for Er
                 writeln!(f, "Sso GetRole Credentials Error: {}", err)
             }
             Error::Cache(err) => writeln!(f, "Cache Error: {}", err),
+            Error::OidcListAccounts(err) => {
+                writeln!(f, "Oidc List Accounts Error: {}", err)
+            }
+            Error::OidcListAccountRoles(err) => {
+                writeln!(f, "Oidc List Account Roles Error: {}", err)
+            }
         }
     }
 }
@@ -117,14 +128,11 @@ where
         }
     }
 
-    pub async fn assume_role(
-        &mut self,
-        account_id: &str,
-        role_name: &str,
-        refresh_sts_token: bool,
-    ) -> Result<Credentials, C::Error> {
+    async fn prepare_sso_and_resolve<T, F>(&mut self, resolver: F) -> Result<T, C::Error>
+    where
+        F: AsyncFnOnce(&mut Self) -> Result<T, C::Error>,
+    {
         self.load_cache();
-
         if self.client_info.client_id.is_none() || self.client_info.client_secret.is_none() {
             self.register_client().await?;
             self.client_info.access_token = None;
@@ -137,25 +145,114 @@ where
             self.create_access_token().await?;
             self.cache_manager.clear_sessions();
         }
-
-        let credentials = if refresh_sts_token {
-            self.resolve_credentials(role_name, account_id).await?
-        } else if let Some(cached_credentials) =
-            self.cache_manager.get_session(account_id, role_name)
-        {
-            Credentials::from(cached_credentials.clone())
-        } else {
-            self.resolve_credentials(role_name, account_id).await?
-        };
-
-        self.cache_manager
-            .set_session(account_id, role_name, credentials.clone());
-        self.cache_manager.set_client_info(self.client_info.clone());
-
-        self.cache_manager.commit().map_err(Error::Cache)?;
-
-        Ok(credentials)
+        let result = resolver(self).await;
+        if result.is_ok() {
+            self.cache_manager.set_client_info(self.client_info.clone());
+            self.cache_manager.commit().map_err(Error::Cache)?;
+        }
+        result
     }
+
+    pub async fn list_accounts(&mut self) -> Result<Vec<AccountInfo>, C::Error> {
+        self.prepare_sso_and_resolve(async |auth| {
+            let access_token = auth
+                .client_info
+                .access_token
+                .as_deref()
+                .expect(EXPECT_MESSAGE);
+
+            let accounts = auth
+                .sso_client
+                .list_accounts()
+                .access_token(access_token)
+                .into_paginator()
+                .send()
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .await
+                .map_err(Error::OidcListAccounts)?
+                .into_iter()
+                .filter_map(|res| res.account_list)
+                .flatten()
+                .collect();
+
+            Ok(accounts)
+        })
+        .await
+    }
+
+    pub async fn list_account_roles(
+        &mut self,
+        account_id: &str,
+    ) -> Result<Vec<RoleInfo>, C::Error> {
+        self.prepare_sso_and_resolve(async |auth| {
+            let access_token = auth
+                .client_info
+                .access_token
+                .as_deref()
+                .expect(EXPECT_MESSAGE);
+            let roles = auth
+                .sso_client
+                .list_account_roles()
+                .account_id(account_id)
+                .access_token(access_token)
+                .into_paginator()
+                .send()
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .await
+                .map_err(Error::OidcListAccountRoles)?
+                .into_iter()
+                .filter_map(|res| res.role_list)
+                .flatten()
+                .collect();
+            Ok(roles)
+        })
+        .await
+    }
+
+    pub async fn assume_role(
+        &mut self,
+        account_id: &str,
+        role_name: &str,
+        refresh_sts_token: bool,
+    ) -> Result<Credentials, C::Error> {
+        self.prepare_sso_and_resolve(async |auth| {
+            let credentials = if refresh_sts_token {
+                auth.resolve_credentials(role_name, account_id).await?
+            } else if let Some(cached_credentials) =
+                auth.cache_manager.get_session(account_id, role_name)
+            {
+                Credentials::from(cached_credentials.clone())
+            } else {
+                auth.resolve_credentials(role_name, account_id).await?
+            };
+            auth.cache_manager
+                .set_session(account_id, role_name, credentials.clone());
+            Ok(credentials)
+        })
+        .await
+    }
+
+    // pub async fn assume_role(
+    //     &mut self,
+    //     account_id: &str,
+    //     role_name: &str,
+    //     refresh_sts_token: bool,
+    // ) -> Result<Credentials, C::Error> {
+    //     self.prepare_sso().await?;
+    //     let credentials = if refresh_sts_token {
+    //         self.resolve_credentials(role_name, account_id).await?
+    //     } else if let Some(cached_credentials) =
+    //         self.cache_manager.get_session(account_id, role_name)
+    //     {
+    //         Credentials::from(cached_credentials.clone())
+    //     } else {
+    //         self.resolve_credentials(role_name, account_id).await?
+    //     };
+    //     self.cache_manager
+    //         .set_session(account_id, role_name, credentials.clone());
+    //     self.commit_cache()?;
+    //     Ok(credentials)
+    // }
 
     fn load_cache(&mut self) {
         if self.cache_manager.load_cache().is_err()
