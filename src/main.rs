@@ -6,6 +6,7 @@ mod commands;
 mod common;
 mod credential_providers;
 mod utils;
+mod aws_sso;
 
 use alias_providers::build_alias_provider;
 use aws_config::Region;
@@ -138,7 +139,7 @@ async fn main() -> Result<(), String> {
             .map_err(error_to_string)?;
         }
         Commands::Alias { subcommand } => exec_alias(subcommand).map_err(error_to_string)?,
-        Commands::Sso { subcommand } => exec_sso(subcommand).map_err(error_to_string)?,
+        Commands::Sso { subcommand } => exec_sso(subcommand).await.map_err(error_to_string)?,
     }
     Ok(())
 }
