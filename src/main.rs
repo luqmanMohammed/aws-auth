@@ -51,6 +51,8 @@ async fn main() -> Result<(), String> {
             .map_err(error_to_string)?,
         Commands::Alias { subcommand } => exec_alias(subcommand).map_err(error_to_string)?,
         Commands::Sso { subcommand } => exec_sso(subcommand).await.map_err(error_to_string)?,
+        #[allow(unused_variables)]
+        Commands::Batch { subcommand } => unimplemented!("Batch command is not implemented yet"),
     }
     Ok(())
 }

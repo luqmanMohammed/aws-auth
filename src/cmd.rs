@@ -146,6 +146,13 @@ pub enum Commands {
         #[clap(subcommand)]
         subcommand: Sso,
     },
+
+    /// The `Batch` subcommand is used to perform tasks on multiple AWS accounts and roles.
+    /// You can execute commands in sequential/parallel across multiple accounts and roles.
+    Batch {
+        #[clap(subcommand)]
+        subcommand: Batch,
+    },
 }
 
 #[derive(Subcommand)]
@@ -335,6 +342,11 @@ pub struct BatchCommonArgs {
     /// If not provided, the default region will be used.
     #[arg(short = ARG_SHORT_REGION, long, default_value_t=String::from("eu-west-2"))]
     pub region: String,
+
+    /// Number of parallel executions to be used for batch operations.
+    /// If not provided, the default value of `1` will be used.
+    #[arg(short = 'p', long, default_value_t = 1)]
+    pub parallel: usize,
 
     /// Optional cache directory for storing AWS SSO authentication tokens.
     /// If not provided, the default cache location will be used.

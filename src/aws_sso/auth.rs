@@ -254,28 +254,6 @@ where
         .await
     }
 
-    // pub async fn assume_role(
-    //     &mut self,
-    //     account_id: &str,
-    //     role_name: &str,
-    //     refresh_sts_token: bool,
-    // ) -> Result<Credentials, C::Error> {
-    //     self.prepare_sso().await?;
-    //     let credentials = if refresh_sts_token {
-    //         self.resolve_credentials(role_name, account_id).await?
-    //     } else if let Some(cached_credentials) =
-    //         self.cache_manager.get_session(account_id, role_name)
-    //     {
-    //         Credentials::from(cached_credentials.clone())
-    //     } else {
-    //         self.resolve_credentials(role_name, account_id).await?
-    //     };
-    //     self.cache_manager
-    //         .set_session(account_id, role_name, credentials.clone());
-    //     self.commit_cache()?;
-    //     Ok(credentials)
-    // }
-
     fn load_cache(&mut self, ignore_cache: bool) {
         if self.cache_manager.load_cache().is_err()
             || !self.cache_manager.is_valid(&self.start_url)
