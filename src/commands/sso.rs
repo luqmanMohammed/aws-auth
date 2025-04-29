@@ -1,6 +1,9 @@
 use crate::aws_sso::{build_aws_sso_manager_with_cache_handling, AwsSsoManagerError};
 use crate::cmd::Sso;
-use crate::utils::formatters::{json::JsonFormatter, text::TextFormatter, TabularFormatter};
+use crate::utils::{
+    formatters::{json::JsonFormatter, text::TextFormatter, TabularFormatter},
+    resolve_config_dir,
+};
 
 #[derive(Debug)]
 pub enum Error {
@@ -27,8 +30,9 @@ impl std::fmt::Display for Error {
 pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
     match subcommand {
         Sso::ListAccounts { common, formatting } => {
+            let config_dir = resolve_config_dir(common.config_dir.as_deref());
             let mut sso_manager = build_aws_sso_manager_with_cache_handling(
-                common.config_dir.as_deref(),
+                &config_dir,
                 common.sso_cache_dir.as_deref(),
             );
 
@@ -72,8 +76,9 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
             account,
             formatting,
         } => {
+            let config_dir = resolve_config_dir(common.config_dir.as_deref());
             let mut sso_manager = build_aws_sso_manager_with_cache_handling(
-                common.config_dir.as_deref(),
+                &config_dir,
                 common.sso_cache_dir.as_deref(),
             );
 

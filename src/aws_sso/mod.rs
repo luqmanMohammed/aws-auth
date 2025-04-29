@@ -7,12 +7,9 @@ use std::path::Path;
 
 use auth::AuthManager;
 use aws_config::Region;
-use aws_sdk_sso::config::Credentials;
 use cache::mono_json::MonoJsonCacheManager;
 use chrono::Duration;
 use config::AwsSsoConfig;
-
-use crate::utils;
 
 type CacheManager = MonoJsonCacheManager;
 type CacheManagerError = cache::mono_json::Error;
@@ -45,18 +42,17 @@ fn build_aws_sso_manager(
 }
 
 pub fn build_aws_sso_manager_with_cache_handling(
-    config_dir: Option<&Path>,
+    config_dir: &Path,
     cache_dir: Option<&Path>,
 ) -> AwsSsoManager {
-    let config_dir = utils::resolve_config_dir(config_dir);
-    let cache_manager = MonoJsonCacheManager::new(cache_dir.unwrap_or(&config_dir));
-    build_aws_sso_manager(cache_manager, &config_dir, true)
+    let cache_manager = MonoJsonCacheManager::new(cache_dir.unwrap_or(config_dir));
+    build_aws_sso_manager(cache_manager, config_dir, true)
 }
 
+#[allow(dead_code)]
 pub fn build_aws_sso_manager_with_manual_cache_handling(
     cache_manager: CacheManager,
-    config_dir: Option<&Path>,
+    config_dir: &Path,
 ) -> AwsSsoManager {
-    let config_dir = utils::resolve_config_dir(config_dir);
-    build_aws_sso_manager(cache_manager, &config_dir, false)
+    build_aws_sso_manager(cache_manager, config_dir, false)
 }

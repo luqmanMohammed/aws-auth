@@ -1,4 +1,4 @@
-use crate::credential_providers::aws_sso::config::AwsSsoConfig;
+use crate::aws_sso::config::AwsSsoConfig;
 use crate::utils::resolve_config_dir;
 use std::path::PathBuf;
 

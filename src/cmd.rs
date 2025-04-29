@@ -129,6 +129,27 @@ pub enum Commands {
         #[arg(short = 'e', long, default_value_t = false)]
         recreate: bool,
     },
+
+    #[clap(flatten)]
+    Core(CoreCommands),
+
+    /// The `Alias` subcommand is used to manage AWS account aliases.
+    /// You can set, unset, or list account aliases.
+    Alias {
+        #[clap(subcommand)]
+        subcommand: Alias,
+    },
+
+    /// The `Sso` subcommand is used to manage AWS SSO accounts and roles.
+    /// You can list available accounts and roles.
+    Sso {
+        #[clap(subcommand)]
+        subcommand: Sso,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum CoreCommands {
     /// The `Eks` subcommand is used to print a valid Kubernetes authentication object
     /// to be used with the Kubernetes external authentication process.
     /// This is particularly useful when authenticating with an AWS EKS cluster.
@@ -172,20 +193,16 @@ pub enum Commands {
         #[arg(trailing_var_arg = true)]
         arguments: Vec<String>,
     },
+}
 
-    /// The `Alias` subcommand is used to manage AWS account aliases.
-    /// You can set, unset, or list account aliases.
-    Alias {
-        #[clap(subcommand)]
-        subcommand: Alias,
-    },
-
-    /// The `Sso` subcommand is used to manage AWS SSO accounts and roles.
-    /// You can list available accounts and roles.
-    Sso {
-        #[clap(subcommand)]
-        subcommand: Sso,
-    },
+impl CoreCommands {
+    pub fn get_common_args(&self) -> &CommonArgs {
+        match self {
+            CoreCommands::Eks { common, .. } => common,
+            CoreCommands::Eval { common, .. } => common,
+            CoreCommands::Exec { common, .. } => common,
+        }
+    }
 }
 
 #[derive(Args)]

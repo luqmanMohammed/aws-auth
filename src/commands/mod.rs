@@ -1,7 +1,5 @@
 pub mod alias;
-pub mod eks;
-pub mod eval;
-pub mod exec;
+pub mod batch;
+pub mod core;
 pub mod init;
 pub mod sso;
-pub mod batch;
