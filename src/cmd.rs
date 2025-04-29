@@ -77,7 +77,7 @@ pub struct CommonArgs {
     /// Optional cache directory for storing authentication tokens.
     /// If not provided, the default cache location will be used.
     #[arg(long)]
-    pub cache_dir: Option<PathBuf>,
+    pub sso_cache_dir: Option<PathBuf>,
 
     /// Optional config path to retrieve AWS Auth Config.
     /// If not provided, the default config path will be used
@@ -179,6 +179,26 @@ pub enum Commands {
         #[clap(subcommand)]
         subcommand: Alias,
     },
+
+    /// The `Sso` subcommand is used to manage AWS SSO accounts and roles.
+    /// You can list available accounts and roles.
+    Sso {
+        #[clap(subcommand)]
+        subcommand: Sso,
+    },
+}
+
+#[derive(Args)]
+pub struct FormatCommonArgs {
+    /// Format for the output list
+    #[arg(short = 'O', long, default_value_t = OutputFormat::Text)]
+    pub output: OutputFormat,
+    /// Flag to omit headers in the output
+    #[arg(short = 'n', long, default_value_t = false)]
+    pub no_headers: bool,
+    /// Fields to omit from the output
+    #[arg(short = 'i', long, value_delimiter = ',')]
+    pub omit_fields: Vec<String>,
 }
 
 #[derive(Args)]
@@ -224,14 +244,52 @@ pub enum Alias {
         /// Common alias management arguments
         #[clap(flatten)]
         common: AliasCommonArgs,
-        /// Format for the output list
-        #[arg(short = 'O', long, default_value_t = OutputFormat::Text)]
-        output: OutputFormat,
-        /// Flag to omit headers in the output
-        #[arg(short = 'n', long, default_value_t = false)]
-        no_headers: bool,
-        /// Fields to omit from the output
-        #[arg(short = 'i', long, value_delimiter = ',')]
-        omit_fields: Vec<String>,
+
+        /// Optional formatting arguments for the output
+        #[clap(flatten)]
+        formatting: FormatCommonArgs,
+    },
+}
+
+#[derive(Args)]
+pub struct SsoCommonArgs {
+    /// Optional cache directory for storing AWS SSO authentication tokens.
+    /// If not provided, the default cache location will be used.
+    #[arg(long)]
+    pub sso_cache_dir: Option<PathBuf>,
+
+    /// Optional config path to retrieve AWS Auth Config.
+    /// If not provided, the default config path will be used
+    #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
+    pub config_dir: Option<PathBuf>,
+
+    /// Flag to ignore the cache and request new credentials even if cached ones are available.
+    /// Defaults to `false`.
+    #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
+    pub ignore_cache: bool,
+}
+
+/// Subcommands for AWS SSO management
+/// These commands are used to manage AWS SSO accounts and roles.
+#[derive(Subcommand)]
+pub enum Sso {
+    /// The `ListAccounts` subcommand is used to list all AWS accounts available in the SSO configuration.
+    ListAccounts {
+        #[clap(flatten)]
+        common: SsoCommonArgs,
+        /// Optional formatting arguments for the output
+        #[clap(flatten)]
+        formatting: FormatCommonArgs,
+    },
+    /// The `ListAccountRoles` subcommand is used to list all roles available for a specific AWS account in the SSO configuration.
+    ListAccountRoles {
+        #[clap(flatten)]
+        common: SsoCommonArgs,
+        /// AWS Account ID to list roles for
+        #[arg(short = ARG_SHORT_ACCOUNT, long, value_parser=validate_account_id)]
+        account: String,
+        /// Optional formatting arguments for the output
+        #[clap(flatten)]
+        formatting: FormatCommonArgs,
     },
 }

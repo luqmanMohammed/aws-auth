@@ -18,6 +18,7 @@ use commands::{
     eval::{self, ExecEvalInputs},
     exec::{self, ExecExecInputs},
     init::{self, ExecInitInputs},
+    sso::exec_sso,
 };
 use credential_providers::{build_credential_provider, ProvideCredentialsInput};
 use std::error::Error;
@@ -53,7 +54,7 @@ fn build_credential_provider_inputs(
         role: assume_identifier.role.to_string(),
         ignore_cache: common.ignore_cache,
         config_dir: config_dir.to_path_buf(),
-        cache_dir: common.cache_dir.clone(),
+        cache_dir: common.sso_cache_dir.clone(),
         refresh_sts_token: common.refresh_sts_token,
     })
 }
@@ -137,6 +138,7 @@ async fn main() -> Result<(), String> {
             .map_err(error_to_string)?;
         }
         Commands::Alias { subcommand } => exec_alias(subcommand).map_err(error_to_string)?,
+        Commands::Sso { subcommand } => exec_sso(subcommand).map_err(error_to_string)?,
     }
     Ok(())
 }
