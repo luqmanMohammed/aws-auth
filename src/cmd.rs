@@ -191,13 +191,13 @@ pub enum Commands {
 #[derive(Args)]
 pub struct FormatCommonArgs {
     /// Format for the output list
-    #[arg(short = 'O', long, default_value_t = OutputFormat::Text)]
+    #[arg(short = 'F', long, default_value_t = OutputFormat::Text)]
     pub output: OutputFormat,
     /// Flag to omit headers in the output
-    #[arg(short = 'n', long, default_value_t = false)]
+    #[arg(short = 'H', long, default_value_t = false)]
     pub no_headers: bool,
     /// Fields to omit from the output
-    #[arg(short = 'i', long, value_delimiter = ',')]
+    #[arg(short = 'O', long, value_delimiter = ',')]
     pub omit_fields: Vec<String>,
 }
 
@@ -291,5 +291,61 @@ pub enum Sso {
         /// Optional formatting arguments for the output
         #[clap(flatten)]
         formatting: FormatCommonArgs,
+    },
+}
+
+#[derive(Args)]
+pub struct BatchCommonArgs {
+    /// AWS Account Ids to perform batch operations on.
+    /// If not provided, all accounts will be used.
+    /// Ignored if `aliases` or `account_filter_regex` is provided.
+    pub account_ids: Option<Vec<String>>,
+
+    /// AWS IAM Roles to be used for batch operations.
+    /// Position of the role in the list will be used to determine the order of role assumption.
+    /// aws-auth will use the first successful assumption in the list.
+    pub role_order: Option<Vec<String>>,
+
+    /// Optional aliases to be used for batch operations.
+    pub aliases: Option<Vec<String>>,
+
+    /// Optional regex pattern to filter accounts by their names.
+    /// This is useful for selecting accounts based on specific naming conventions.
+    /// The regex pattern should be a valid Rust regex.
+    pub account_filter_regex: Option<String>,
+
+    /// Optional region to be used for batch operations.
+    /// If not provided, the default region will be used.
+    #[arg(short = ARG_SHORT_REGION, long, default_value_t=String::from("eu-west-2"))]
+    pub region: String,
+
+    /// Optional cache directory for storing AWS SSO authentication tokens.
+    /// If not provided, the default cache location will be used.
+    #[arg(long)]
+    pub sso_cache_dir: Option<PathBuf>,
+
+    /// Optional config path to retrieve AWS Auth Config.
+    /// If not provided, the default config path will be used
+    #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
+    pub config_dir: Option<PathBuf>,
+
+    /// Flag to ignore the cache and request new credentials even if cached ones are available.
+    /// Defaults to `false`.
+    #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
+    pub ignore_cache: bool,
+}
+
+/// Subcommands for batch processing
+/// These commands are used to manage batch operations for AWS accounts and roles.
+#[derive(Subcommand)]
+pub enum Batch {
+    Exec {
+        #[clap(flatten)]
+        batch_common: BatchCommonArgs,
+
+        /// The command and its arguments to be executed with the AWS credentials.
+        /// You must provide the command after `--`.
+        #[arg(trailing_var_arg = true)]
+        arguments: Vec<String>,
     },
 }
