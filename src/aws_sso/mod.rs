@@ -1,5 +1,5 @@
 mod auth;
-mod cache;
+pub mod cache;
 pub mod config;
 mod types;
 
@@ -7,20 +7,20 @@ use std::path::Path;
 
 use auth::AuthManager;
 use aws_config::Region;
-use cache::mono_json::MonoJsonCacheManager;
+use cache::{mono_json::MonoJsonCacheManager, CacheRefMut};
 use chrono::Duration;
 use config::AwsSsoConfig;
 
-type CacheManager = MonoJsonCacheManager;
-type CacheManagerError = cache::mono_json::Error;
-pub type AwsSsoManager = AuthManager<CacheManager>;
+pub type CacheManager = MonoJsonCacheManager;
+pub type CacheManagerError = cache::mono_json::Error;
+pub type AwsSsoManager<'a> = AuthManager<'a, CacheManager>;
 pub type AwsSsoManagerError = auth::Error<CacheManagerError>;
 
-fn build_aws_sso_manager(
-    cache_manager: CacheManager,
+fn build_aws_sso_manager<'a>(
+    cache_manager: impl Into<CacheRefMut<'a, CacheManager>>,
     config_dir: &Path,
     handle_cache: bool,
-) -> AwsSsoManager {
+) -> AwsSsoManager<'a> {
     let config =
         AwsSsoConfig::load_config(&config_dir.join("config.json")).expect("Config should be valid");
     let initial_delay = config
@@ -41,18 +41,17 @@ fn build_aws_sso_manager(
     )
 }
 
-pub fn build_aws_sso_manager_with_cache_handling(
+pub fn build_sso_mgr_cached<'a>(
     config_dir: &Path,
     cache_dir: Option<&Path>,
-) -> AwsSsoManager {
+) -> AwsSsoManager<'a> {
     let cache_manager = MonoJsonCacheManager::new(cache_dir.unwrap_or(config_dir));
     build_aws_sso_manager(cache_manager, config_dir, true)
 }
 
-#[allow(dead_code)]
-pub fn build_aws_sso_manager_with_manual_cache_handling(
-    cache_manager: CacheManager,
+pub fn build_sso_mgr_manual<'a>(
+    cache_manager: &'a mut CacheManager,
     config_dir: &Path,
-) -> AwsSsoManager {
+) -> AwsSsoManager<'a> {
     build_aws_sso_manager(cache_manager, config_dir, false)
 }

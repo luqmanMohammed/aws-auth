@@ -1,4 +1,4 @@
-use crate::aws_sso::cache::CacheManager;
+use crate::aws_sso::cache::ManageCache;
 use crate::aws_sso::types::ClientInformation;
 use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
 use aws_sdk_sso::operation::get_role_credentials::GetRoleCredentialsError;
@@ -15,6 +15,7 @@ use aws_smithy_runtime_api::http::Response;
 use chrono::{DateTime, Duration, Utc};
 use std::thread;
 use std::time::UNIX_EPOCH;
+use super::cache::CacheRefMut;
 
 const OIDC_APP_NAME: &str = "aws-auth";
 const OIDC_CLIENT_TYPE: &str = "public";
@@ -69,13 +70,13 @@ impl<CE: 'static + std::error::Error + std::fmt::Debug> std::error::Error for Er
 
 type Result<T, CE> = std::result::Result<T, Error<CE>>;
 
-pub struct AuthManager<C>
+pub struct AuthManager<'a, C>
 where
-    C: 'static + CacheManager,
+    C: 'static + ManageCache,
 {
     oidc_client: OidcClient,
     sso_client: SsoClient,
-    cache_manager: C,
+    cache_manager: CacheRefMut<'a, C>,
     start_url: String,
     initial_delay: Duration,
     max_attempts: usize,
@@ -86,15 +87,15 @@ where
     handle_cache: bool,
 }
 
-impl<C> AuthManager<C>
+impl<'a, C> AuthManager<'a, C>
 where
-    C: 'static + CacheManager,
+    C: 'static + ManageCache,
     C::Error: 'static + std::error::Error + std::fmt::Debug,
 {
     /// TODO: Refactor into a input type
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        cache_manager: C,
+        cache_manager: impl Into<CacheRefMut<'a, C>>,
         start_url: impl Into<String>,
         sso_region: Region,
         initial_delay: Option<Duration>,
@@ -114,7 +115,7 @@ where
         Self {
             oidc_client,
             sso_client,
-            cache_manager,
+            cache_manager: cache_manager.into(),
             start_url: start_url.into(),
             initial_delay: initial_delay.unwrap_or(DEFAULT_CREATE_TOKEN_INITIAL_DELAY),
             max_attempts: max_attempts.unwrap_or(DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS),
@@ -161,6 +162,7 @@ where
         result
     }
 
+    // TODO: Cache account roles
     pub async fn list_accounts(
         &mut self,
         ignore_cache: bool,
@@ -194,6 +196,7 @@ where
         .await
     }
 
+    // TODO: Cache account roles
     pub async fn list_account_roles(
         &mut self,
         account_id: &str,

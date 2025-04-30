@@ -13,7 +13,56 @@ pub struct Cache {
     sessions: HashMap<String, CredentialsWrapper>,
 }
 
-pub trait CacheManager {
+pub enum CacheRefMut<'a, C: ManageCache> {
+    Owned(C),
+    BorrowedMut(&'a mut C),
+}
+
+impl<C: ManageCache> ManageCache for CacheRefMut<'_, C> {
+    type Error = C::Error;
+
+    fn load_cache(&mut self) -> Result<(), Self::Error> {
+        match self {
+            CacheRefMut::Owned(ref mut c) => c.load_cache(),
+            CacheRefMut::BorrowedMut(c) => c.load_cache(),
+        }
+    }
+
+    fn commit(&self) -> Result<(), Self::Error> {
+        match self {
+            CacheRefMut::Owned(ref c) => c.commit(),
+            CacheRefMut::BorrowedMut(c) => c.commit(),
+        }
+    }
+
+    fn get_cache_as_ref(&self) -> &Cache {
+        match self {
+            CacheRefMut::Owned(ref c) => c.get_cache_as_ref(),
+            CacheRefMut::BorrowedMut(c) => c.get_cache_as_ref(),
+        }
+    }
+
+    fn get_cache_as_mut(&mut self) -> &mut Cache {
+        match self {
+            CacheRefMut::Owned(ref mut c) => c.get_cache_as_mut(),
+            CacheRefMut::BorrowedMut(c) => c.get_cache_as_mut(),
+        }
+    }
+}
+
+impl<C: ManageCache> From<C> for CacheRefMut<'_, C> {
+    fn from(cache_manager: C) -> Self {
+        CacheRefMut::Owned(cache_manager)
+    }
+}
+
+impl<'a, C: ManageCache> From<&'a mut C> for CacheRefMut<'a, C> {
+    fn from(cache_manager: &'a mut C) -> Self {
+        CacheRefMut::BorrowedMut(cache_manager)
+    }
+}
+
+pub trait ManageCache {
     type Error: 'static + std::fmt::Debug + std::error::Error;
 
     fn load_cache(&mut self) -> Result<(), Self::Error>;
@@ -148,7 +197,7 @@ pub trait CacheManager {
 
 pub mod mono_json {
     use crate::aws_sso::cache::Cache;
-    use crate::aws_sso::cache::CacheManager;
+    use crate::aws_sso::cache::ManageCache;
     use std::fs::File;
     use std::path::{Path, PathBuf};
 
@@ -183,7 +232,7 @@ pub mod mono_json {
         }
     }
 
-    impl CacheManager for MonoJsonCacheManager {
+    impl ManageCache for MonoJsonCacheManager {
         type Error = Error;
 
         fn load_cache(&mut self) -> Result<(), Self::Error> {
