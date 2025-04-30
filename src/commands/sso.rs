@@ -1,4 +1,4 @@
-use crate::aws_sso::{build_aws_sso_manager_with_cache_handling, AwsSsoManagerError};
+use crate::aws_sso::{build_sso_mgr_cached, AwsSsoManagerError};
 use crate::cmd::Sso;
 use crate::utils::{
     formatters::{json::JsonFormatter, text::TextFormatter, TabularFormatter},
@@ -31,10 +31,8 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
     match subcommand {
         Sso::ListAccounts { common, formatting } => {
             let config_dir = resolve_config_dir(common.config_dir.as_deref());
-            let mut sso_manager = build_aws_sso_manager_with_cache_handling(
-                &config_dir,
-                common.sso_cache_dir.as_deref(),
-            );
+            let mut sso_manager =
+                build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref());
 
             let accounts = sso_manager
                 .list_accounts(common.ignore_cache)
@@ -77,10 +75,8 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
             formatting,
         } => {
             let config_dir = resolve_config_dir(common.config_dir.as_deref());
-            let mut sso_manager = build_aws_sso_manager_with_cache_handling(
-                &config_dir,
-                common.sso_cache_dir.as_deref(),
-            );
+            let mut sso_manager =
+                build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref());
 
             let roles = sso_manager
                 .list_account_roles(&account, common.ignore_cache)

@@ -10,7 +10,7 @@ use exec::ExecExecInputs;
 
 use crate::{
     alias_providers,
-    aws_sso::{build_aws_sso_manager_with_cache_handling, AwsSsoManagerError},
+    aws_sso::{build_sso_mgr_cached, AwsSsoManagerError},
     cmd::CoreCommands,
     utils::{resolve_assume_identifier, resolve_config_dir},
 };
@@ -39,7 +39,7 @@ impl std::fmt::Display for Error {
 pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
     let common_args = command.get_common_args();
     let config_dir = resolve_config_dir(common_args.config_dir.as_deref());
-    let mut sso_manager = build_aws_sso_manager_with_cache_handling(
+    let mut sso_manager = build_sso_mgr_cached(
         &config_dir,
         common_args.sso_cache_dir.as_deref(),
     );

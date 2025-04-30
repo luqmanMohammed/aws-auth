@@ -11,6 +11,7 @@ use clap::Parser;
 use cmd::{Cli, Commands};
 use commands::{
     alias::exec_alias,
+    batch::exec_batch,
     core::exec_core_commands,
     init::{self, ExecInitInputs},
     sso::exec_sso,
@@ -51,8 +52,7 @@ async fn main() -> Result<(), String> {
             .map_err(error_to_string)?,
         Commands::Alias { subcommand } => exec_alias(subcommand).map_err(error_to_string)?,
         Commands::Sso { subcommand } => exec_sso(subcommand).await.map_err(error_to_string)?,
-        #[allow(unused_variables)]
-        Commands::Batch { subcommand } => unimplemented!("Batch command is not implemented yet"),
+        Commands::Batch { subcommand } => exec_batch(subcommand).await.map_err(error_to_string)?,
     }
     Ok(())
 }
