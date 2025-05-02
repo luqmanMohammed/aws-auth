@@ -1,5 +1,4 @@
 pub mod formatters;
-pub mod workerpool;
 
 use crate::alias_providers::ProvideAliases;
 use crate::cmd::{AssumeInput, CommonArgs};

@@ -1,3 +1,4 @@
+use super::cache::CacheRefMut;
 use crate::aws_sso::cache::ManageCache;
 use crate::aws_sso::types::ClientInformation;
 use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
@@ -15,7 +16,6 @@ use aws_smithy_runtime_api::http::Response;
 use chrono::{DateTime, Duration, Utc};
 use std::thread;
 use std::time::UNIX_EPOCH;
-use super::cache::CacheRefMut;
 
 const OIDC_APP_NAME: &str = "aws-auth";
 const OIDC_CLIENT_TYPE: &str = "public";
@@ -257,7 +257,7 @@ where
         .await
     }
 
-    fn load_cache(&mut self, ignore_cache: bool) {
+    pub fn load_cache(&mut self, ignore_cache: bool) {
         if self.cache_manager.load_cache().is_err()
             || !self.cache_manager.is_valid(&self.start_url)
             || ignore_cache

@@ -320,61 +320,68 @@ pub enum Sso {
 
 #[derive(Args)]
 pub struct BatchCommonArgs {
-    /// AWS Account Ids to perform batch operations on.
-    /// If not provided, all accounts will be used.
-    /// Ignored if `aliases` or `account_filter_regex` is provided.
+    /// Target specific AWS accounts (ignored when using aliases or regex filters)
+    #[arg(short = 'a', long)]
     pub account_ids: Option<Vec<String>>,
 
-    /// AWS IAM Roles to be used for batch operations.
-    /// Position of the role in the list will be used to determine the order of role assumption.
-    /// aws-auth will use the first successful assumption in the list.
+    /// IAM roles to try in order (will use first successful role)
+    #[arg(short = 'R', long)]
     pub role_order: Option<Vec<String>>,
 
-    /// Optional aliases to be used for batch operations.
+    /// Target accounts by their aliases
+    #[arg(short = 'A', long)]
     pub aliases: Option<Vec<String>>,
 
-    /// Optional regex pattern to filter accounts by their names.
-    /// This is useful for selecting accounts based on specific naming conventions.
-    /// The regex pattern should be a valid Rust regex.
+    /// Filter accounts by name using Rust regex pattern
+    #[arg(short = 'f', long)]
     pub account_filter_regex: Option<String>,
 
-    /// Optional region to be used for batch operations.
-    /// If not provided, the default region will be used.
+    /// AWS region for operations (defaults to eu-west-2)
     #[arg(short = ARG_SHORT_REGION, long, default_value_t=String::from("eu-west-2"))]
     pub region: String,
 
-    /// Number of parallel executions to be used for batch operations.
-    /// If not provided, the default value of `1` will be used.
+    /// Number of concurrent operations (defaults to 1)
     #[arg(short = 'p', long, default_value_t = 1)]
     pub parallel: usize,
 
-    /// Optional cache directory for storing AWS SSO authentication tokens.
-    /// If not provided, the default cache location will be used.
+    /// Custom directory for SSO token storage
     #[arg(long)]
     pub sso_cache_dir: Option<PathBuf>,
 
-    /// Optional config path to retrieve AWS Auth Config.
-    /// If not provided, the default config path will be used
+    /// Custom AWS Auth config location (can be set via AWS_AUTH_CONFIG_DIR)
     #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
     pub config_dir: Option<PathBuf>,
 
-    /// Flag to ignore the cache and request new credentials even if cached ones are available.
-    /// Defaults to `false`.
+    /// Force new credentials instead of using cached ones
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
 }
 
-/// Subcommands for batch processing
-/// These commands are used to manage batch operations for AWS accounts and roles.
+/// Batch commands for running operations across multiple AWS accounts
 #[derive(Subcommand)]
 pub enum Batch {
     Exec {
         #[clap(flatten)]
         batch_common: BatchCommonArgs,
 
-        /// The command and its arguments to be executed with the AWS credentials.
-        /// You must provide the command after `--`.
+        /// Hide command output when running
+        #[arg(short = 's', long, default_value_t = false)]
+        suppress_output: bool,
+
+        /// Directory to save command output files (one per account)
+        /// If suppress_output is enabled, this takes no affect
+        #[arg(short = 'o', long)]
+        output_dir: Option<PathBuf>,
+
+        /// Command to execute (must be specified after --)
         #[arg(trailing_var_arg = true)]
         arguments: Vec<String>,
     },
+}
+impl Batch {
+    pub fn get_common_args(&self) -> &BatchCommonArgs {
+        match self {
+            Batch::Exec { batch_common, .. } => batch_common,
+        }
+    }
 }
