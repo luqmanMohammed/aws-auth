@@ -36,17 +36,30 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 pub struct ExecJob {
+    pub account_id: String,
     pub credentials: Credentials,
+    pub region: Arc<String>,
     pub arguments: Arc<[String]>,
     pub suppress_output: bool,
     pub output_base_path: Option<Arc<PathBuf>>,
-    pub account_id: String,
 }
 
 impl Job for ExecJob {
+    fn get_job_id(&self) -> &str {
+        &self.account_id
+    }
+
     fn execute(self) {
         if self.suppress_output {
-            exec::<File, File>(&self.arguments, self.credentials, true, None, None).unwrap();
+            exec::<File, File>(
+                &self.arguments,
+                self.credentials,
+                &self.region,
+                true,
+                None,
+                None,
+            )
+            .unwrap();
         } else if let Some(base_path) = self.output_base_path {
             let stdout_path = base_path.join(format!("{}-stdout.log", self.account_id));
             let stderr_path = base_path.join(format!("{}-stderr.log", self.account_id));
@@ -56,13 +69,22 @@ impl Job for ExecJob {
             exec::<File, File>(
                 &self.arguments,
                 self.credentials,
+                &self.region,
                 false,
                 Some(&mut stdout_file),
                 Some(&mut stderr_file),
             )
             .unwrap();
         } else {
-            exec::<File, File>(&self.arguments, self.credentials, false, None, None).unwrap();
+            exec::<File, File>(
+                &self.arguments,
+                self.credentials,
+                &self.region,
+                false,
+                None,
+                None,
+            )
+            .unwrap();
         }
     }
 }
@@ -70,6 +92,7 @@ impl Job for ExecJob {
 fn exec<W1: Write + Send + 'static, W2: Write + Send + 'static>(
     arguments: &[String],
     credentials: Credentials,
+    region: &str,
     suppress_output: bool,
     redirect_stdout: Option<&mut W1>,
     redirect_stderr: Option<&mut W2>,
@@ -81,6 +104,7 @@ fn exec<W1: Write + Send + 'static, W2: Write + Send + 'static>(
     command.args(args);
 
     // Set credentials
+    command.env("AWS_REGION", region);
     command.env("AWS_ACCESS_KEY_ID", credentials.access_key_id());
     command.env("AWS_SECRET_ACCESS_KEY", credentials.secret_access_key());
     if let Some(token) = credentials.session_token() {

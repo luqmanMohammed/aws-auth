@@ -41,10 +41,7 @@ fn build_aws_sso_manager<'a>(
     )
 }
 
-pub fn build_sso_mgr_cached<'a>(
-    config_dir: &Path,
-    cache_dir: Option<&Path>,
-) -> AwsSsoManager<'a> {
+pub fn build_sso_mgr_cached<'a>(config_dir: &Path, cache_dir: Option<&Path>) -> AwsSsoManager<'a> {
     let cache_manager = MonoJsonCacheManager::new(cache_dir.unwrap_or(config_dir));
     build_aws_sso_manager(cache_manager, config_dir, true)
 }

@@ -355,11 +355,21 @@ pub struct BatchCommonArgs {
     /// Force new credentials instead of using cached ones
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
+
+    /// Stops logs printed to stderr
+    #[arg(short = 's', long, default_value_t = false)]
+    pub silent: bool,
 }
 
 /// Batch commands for running operations across multiple AWS accounts
 #[derive(Subcommand)]
 pub enum Batch {
+    /// The `Exec` subcommand is used to execute the provided command
+    /// with AWS credentials.
+    /// This allows you to execute external commands such as AWS CLI commands
+    /// with the appropriate AWS credentials.
+    /// Batch exec would run the provided command with credentials fromm filtered
+    /// accounts.
     Exec {
         #[clap(flatten)]
         batch_common: BatchCommonArgs,

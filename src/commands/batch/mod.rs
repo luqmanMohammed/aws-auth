@@ -16,6 +16,7 @@ use crate::{
         CacheManagerError,
     },
     cmd::Batch,
+    elog,
     utils::resolve_config_dir,
 };
 
@@ -130,27 +131,34 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
         match sso_manager
             .assume_role(&account_id, &role_name, false, batch_common.ignore_cache)
             .await
-            .map_err(Error::AwsSso)
         {
             Ok(credentials) => {
+                elog!(batch_common.silent, "Succesffuly resolved credentials for account {account_id} using the {role_name} role");
                 credentials_map.insert(account_id.clone(), credentials);
             }
-            Err(_) => continue,
+            Err(err) => {
+                if let AwsSsoManagerError::SsoGetRoleCredentials(_) = err {
+                    elog!(batch_common.silent, "Unauthorized to resolve credentials for account {account_id} using the {role_name} role");
+                } else {
+                    Err(Error::AwsSso(err))?;
+                }
+            }
         }
     }
 
     cache_manager.commit().map_err(Error::Cache)?;
-    let parallel = batch_common.parallel;
+
     match subcommand {
         Batch::Exec {
             arguments,
             suppress_output,
             output_dir,
-            ..
+            batch_common,
         } => {
             let arguments: Arc<[String]> = Arc::from(arguments.into_boxed_slice());
-            let worker_pool: ThreadPool<ExecJob> = ThreadPool::new(parallel);
+            let worker_pool: ThreadPool<ExecJob> = ThreadPool::new(batch_common.parallel, false);
             let output_dir = output_dir.map(Arc::new);
+            let region = Arc::new(batch_common.region);
             for (account_id, credentials) in credentials_map {
                 worker_pool.execute(ExecJob {
                     account_id,
@@ -158,6 +166,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                     output_base_path: output_dir.clone(),
                     credentials,
                     suppress_output,
+                    region: region.clone(),
                 });
             }
         }
