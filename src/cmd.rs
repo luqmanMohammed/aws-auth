@@ -1,7 +1,10 @@
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
-/// CLI tool for AWS authentication and credential management
+/// AWS-Auth: A CLI tool for AWS authentication and credential management
+///
+/// Manages AWS credentials, SSO sessions, role assumptions, and provides integrations
+/// with services like EKS. Simplifies credential workflows across multiple accounts.
 #[derive(Parser)]
 #[command(about, version)]
 pub struct Cli {
@@ -9,7 +12,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-// Common
+// Common argument short flags
 const ARG_SHORT_ACCOUNT: char = 'a';
 const ARG_SHORT_ROLE: char = 'r';
 const ARG_SHORT_ALIAS: char = 'A';
@@ -17,15 +20,15 @@ const ARG_SHORT_CONFIG_DIR: char = 'C';
 const ARG_SHORT_IGNORE_CACHE: char = 'i';
 const ARG_SHORT_REFRESH_STS_TOKEN: char = 't';
 const ARG_SHORT_REGION: char = 'R';
-// Eks
+// EKS-specific argument short flag
 const ARG_SHORT_CLUSTER: char = 'c';
 
-/// Output format for command results
+/// Defines output format options for command results
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum OutputFormat {
-    /// JSON formatted output
+    /// JSON formatted output for programmatic consumption
     Json,
-    /// Plain text formatted output
+    /// Plain text formatted output for human readability
     Text,
 }
 
@@ -54,78 +57,93 @@ fn validate_account_id(s: &str) -> Result<String, String> {
 #[derive(Args, Clone)]
 #[group(required = true, multiple = true)]
 pub struct AssumeInput {
-    /// AWS Account ID to authenticate against.
+    /// AWS Account ID to authenticate against (must be 12 digits)
     #[arg(short = ARG_SHORT_ACCOUNT, long, requires="role", conflicts_with="alias", value_parser=validate_account_id)]
     pub account: Option<String>,
 
-    /// AWS IAM Role to assume during authentication.
+    /// AWS IAM Role to assume during authentication
     #[arg(short = ARG_SHORT_ROLE, long, requires="account", conflicts_with="alias")]
     pub role: Option<String>,
 
     /// Predefined alias for an account and role combination
+    /// Use instead of specifying account and role separately
     #[arg(short = ARG_SHORT_ALIAS, long, conflicts_with="account", conflicts_with="role")]
     pub alias: Option<String>,
 }
 
-/// Common arguments used across multiple commands
+/// Common arguments shared across multiple commands
 #[derive(Args)]
 pub struct CommonArgs {
     /// Input parameters for assuming an AWS role
     #[command(flatten)]
     pub assume_input: AssumeInput,
 
-    /// Optional cache directory for storing authentication tokens.
-    /// If not provided, the default cache location will be used.
+    /// Custom directory for storing SSO authentication tokens
+    /// Defaults to standard AWS SSO cache location if not specified
+    /// Default: Value specified for config-dir
     #[arg(long)]
     pub sso_cache_dir: Option<PathBuf>,
 
-    /// Optional config path to retrieve AWS Auth Config.
-    /// If not provided, the default config path will be used
+    /// Custom directory for AWS Auth configuration
+    /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
+    /// Default: ~/.aws-auth
     #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
     pub config_dir: Option<PathBuf>,
 
-    /// Flag to ignore the cache and request new credentials even if cached ones are available.
-    /// Defaults to `false`.
+    /// Force new credential retrieval instead of using cached credentials
+    /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
 
-    /// Flag to refresh the session token even if it is still valid.
-    /// Defaults to `false`.
+    /// Force refresh of the STS token even if current token is valid
+    /// Default: false (use existing valid token)
     #[arg(short = ARG_SHORT_REFRESH_STS_TOKEN, long, default_value_t = false)]
     pub refresh_sts_token: bool,
 
-    /// The AWS region to export as default and selected region.
-    /// If not provided, it defaults to `eu-west-2`.
+    /// AWS region to use for operations
+    /// Default: eu-west-2
     #[arg(short = ARG_SHORT_REGION, long, default_value_t=String::from("eu-west-2"))]
     pub region: String,
 }
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// The `Init` subcommand is used to initialize the AWS SSO configuration.
-    /// The configuration will be saved to the default configuration file location, or the location specified by the user.
-    /// If the configuration directory already exists, the user can choose to recreate it.
-    /// Default configuration directory: `$HOME/.aws-auth`
+    /// Initialize AWS SSO configuration
+    ///
+    /// Creates or updates the AWS SSO configuration used by aws-auth.
+    /// Stores settings in the specified (or default) configuration directory.
+    /// Default location: $HOME/.aws-auth
     Init {
-        /// The SSO start URL for the AWS account.
+        /// SSO start URL for AWS Identity Center (e.g., https://my-company.awsapps.com/start)
         #[arg(short, long)]
         sso_start_url: String,
-        /// The AWS region where the SSO service is hosted.
+
+        /// AWS region where the SSO service is hosted (e.g., us-east-1)
         #[arg(short = 'r', long)]
         sso_region: String,
-        /// The maximum number of attempts to authenticate with AWS SSO.
+
+        /// Maximum authentication retry attempts
+        /// Default: 10
         #[arg(short, long)]
         max_attempts: Option<usize>,
-        /// The initial delay in secounds before retrying the authentication process.
+
+        /// Initial delay in seconds before first retry attempt
+        /// Default: 10s
         #[arg(short, long)]
         initial_delay_secounds: Option<u64>,
-        /// The retry interval in secounds between each authentication attempt.
+
+        /// Interval in seconds between retry attempts
+        /// Default: 5s
         #[arg(short = 't', long)]
         retry_interval_secounds: Option<u64>,
-        /// Optional directory to store the AWS SSO configuration. If not provided, the default directory will be used.
+
+        /// Custom directory to store the AWS SSO configuration
+        /// Default: $HOME/.aws-auth
         #[arg(short, long)]
         config_dir: Option<PathBuf>,
-        /// Flag to recreate the configuration directory if it already exists.
+
+        /// Recreate configuration directory if it already exists
+        /// Default: false (preserve existing configuration)
         #[arg(short = 'e', long, default_value_t = false)]
         recreate: bool,
     },
@@ -133,22 +151,28 @@ pub enum Commands {
     #[clap(flatten)]
     Core(CoreCommands),
 
-    /// The `Alias` subcommand is used to manage AWS account aliases.
-    /// You can set, unset, or list account aliases.
+    /// Manage AWS account aliases
+    ///
+    /// Create, update, remove, or list aliases that map to account ID and role combinations
+    /// for simplified credential access.
     Alias {
         #[clap(subcommand)]
         subcommand: Alias,
     },
 
-    /// The `Sso` subcommand is used to manage AWS SSO accounts and roles.
-    /// You can list available accounts and roles.
+    /// Manage AWS SSO accounts and roles
+    ///
+    /// List available accounts and roles accessible through AWS SSO.
+    /// Helps users discover available resources within their organization.
     Sso {
         #[clap(subcommand)]
         subcommand: Sso,
     },
 
-    /// The `Batch` subcommand is used to perform tasks on multiple AWS accounts and roles.
-    /// You can execute commands in sequential/parallel across multiple accounts and roles.
+    /// Execute operations across multiple AWS accounts
+    ///
+    /// Run commands in sequential or parallel mode across multiple accounts and roles.
+    /// Useful for multi-account administrative tasks.
     Batch {
         #[clap(subcommand)]
         subcommand: Batch,
@@ -157,46 +181,49 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum CoreCommands {
-    /// The `Eks` subcommand is used to print a valid Kubernetes authentication object
-    /// to be used with the Kubernetes external authentication process.
-    /// This is particularly useful when authenticating with an AWS EKS cluster.
+    /// Generate Kubernetes authentication configuration for AWS EKS
+    ///
+    /// Outputs kubectl authentication objects for use with EKS clusters.
+    /// Enables kubectl to authenticate via AWS IAM credentials.
     Eks {
         #[clap(flatten)]
         common: CommonArgs,
 
-        /// The name of the EKS cluster for which to generate the authentication object.
+        /// Name of the EKS cluster to generate authentication for
         #[arg(short = ARG_SHORT_CLUSTER, long)]
         cluster: String,
 
-        /// Optional cache directory for storing EKS authentication tokens.
-        /// If not specified, a default cache location is used.
+        /// Custom directory for storing EKS authentication tokens
+        /// Default: <Value specified for config-dir>/eks
         #[arg(long)]
         eks_cache_dir: Option<PathBuf>,
 
-        /// Optional EKS auth token TTL in secounds.
-        /// If not specified, default value of `900` secounds (15m) will be used.
+        /// Token expiration time in seconds
+        /// Default: 900 seconds (15 minutes)
         #[arg(long)]
         eks_expiry_seconds: Option<usize>,
     },
 
-    /// The `Eval` subcommand is used to print AWS environment variables.
-    /// These variables can be used in shell `eval` commands to set up
-    /// the AWS environment for subsequent commands or scripts.
+    /// Output AWS environment variables for credential access
+    ///
+    /// Prints environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, etc.)
+    /// for use with shell evaluation (eval) to configure credentials in current shell.
     Eval {
         #[clap(flatten)]
         common: CommonArgs,
     },
 
-    /// The `Exec` subcommand is used to execute the provided command
-    /// with AWS credentials.
-    /// This allows you to execute external commands such as AWS CLI commands
-    /// with the appropriate AWS credentials.
+    /// Execute a command with AWS credentials
+    ///
+    /// Runs the specified command with AWS credentials injected into its environment.
+    /// Useful for running tools that require AWS authentication.
     Exec {
         #[clap(flatten)]
         common: CommonArgs,
 
-        /// The command and its arguments to be executed with the AWS credentials.
-        /// You must provide the command after `--`.
+        /// Command and arguments to execute with AWS credentials
+        /// Must be provided after -- separator
+        /// Example: aws-auth exec -a 123456789012 -r AdminRole -- aws s3 ls
         #[arg(trailing_var_arg = true)]
         arguments: Vec<String>,
     },
@@ -214,21 +241,26 @@ impl CoreCommands {
 
 #[derive(Args)]
 pub struct FormatCommonArgs {
-    /// Format for the output list
+    /// Output format type
+    /// Options: json, text (default: text)
     #[arg(short = 'F', long, default_value_t = OutputFormat::Text)]
     pub output: OutputFormat,
-    /// Flag to omit headers in the output
+
+    /// Remove column headers from output
+    /// Default: false (include headers)
     #[arg(short = 'H', long, default_value_t = false)]
     pub no_headers: bool,
-    /// Fields to omit from the output
+
+    /// Fields to exclude from output
+    /// Comma-separated list of field names
     #[arg(short = 'O', long, value_delimiter = ',')]
     pub omit_fields: Vec<String>,
 }
 
 #[derive(Args)]
 pub struct AliasCommonArgs {
-    /// Optional config path to retrieve AWS Auth Config.
-    /// If not provided, the default config path will be used
+    /// Custom directory for AWS Auth configuration
+    /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
     #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
     pub config_dir: Option<PathBuf>,
 }
@@ -236,34 +268,47 @@ pub struct AliasCommonArgs {
 /// Subcommands for alias management
 #[derive(Subcommand)]
 pub enum Alias {
-    /// The `Set` subcommand is used to set an alias for a specific AWS account and role.
-    /// This allows you to easily reference AWS accounts and roles using a friendly name
-    /// instead of the full account ID and role name.
+    /// Create or update an alias for AWS account and role
+    ///
+    /// Maps a user-friendly name to a specific AWS account ID and IAM role
+    /// for easier reference in subsequent commands.
     Set {
         /// Common alias management arguments
         #[clap(flatten)]
         common: AliasCommonArgs,
-        /// The alias name to set
+
+        /// Name of the alias to create or update
         alias: String,
-        /// AWS Account ID to map to the alias
+
+        /// AWS Account ID to associate with this alias (12 digits)
         #[arg(short = ARG_SHORT_ACCOUNT, long, value_parser=validate_account_id)]
         account: String,
-        /// AWS IAM Role name to map to the alias
+
+        /// AWS IAM Role name to associate with this alias
         #[arg(short = ARG_SHORT_ROLE, long)]
         role: String,
-        /// Overwrite an alias if it already exits
+
+        /// Replace existing alias if one exists with the same name
+        /// Default: false (prevents accidental overwrites)
         #[arg(short = 'w', long, default_value_t = false)]
         overwrite: bool,
     },
-    /// The `Unset` subcommand is used to remove an alias for a specific AWS account and role.
+
+    /// Delete an alias
+    ///
+    /// Removes a previously created alias from configuration.
     Unset {
         /// Common alias management arguments
         #[clap(flatten)]
         common: AliasCommonArgs,
-        /// The alias name to remove
+
+        /// Name of the alias to remove
         alias: String,
     },
-    /// The `List` subcommand is used to list all aliases for AWS accounts and roles.
+
+    /// Display configured aliases
+    ///
+    /// Shows all defined aliases with their associated account IDs and roles.
     List {
         /// Common alias management arguments
         #[clap(flatten)]
@@ -277,41 +322,49 @@ pub enum Alias {
 
 #[derive(Args)]
 pub struct SsoCommonArgs {
-    /// Optional cache directory for storing AWS SSO authentication tokens.
-    /// If not provided, the default cache location will be used.
+    /// Custom directory for storing SSO authentication tokens
+    /// Default: Value specified for config-dir
     #[arg(long)]
     pub sso_cache_dir: Option<PathBuf>,
 
-    /// Optional config path to retrieve AWS Auth Config.
-    /// If not provided, the default config path will be used
+    /// Custom directory for AWS Auth configuration
+    /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
+    /// Default: ~/.aws-auth
     #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
     pub config_dir: Option<PathBuf>,
 
-    /// Flag to ignore the cache and request new credentials even if cached ones are available.
-    /// Defaults to `false`.
+    /// Force new credential retrieval instead of using cached credentials
+    /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
 }
 
 /// Subcommands for AWS SSO management
-/// These commands are used to manage AWS SSO accounts and roles.
 #[derive(Subcommand)]
 pub enum Sso {
-    /// The `ListAccounts` subcommand is used to list all AWS accounts available in the SSO configuration.
+    /// Display available AWS accounts
+    ///
+    /// Lists all accounts accessible through AWS SSO with account IDs and names.
     ListAccounts {
         #[clap(flatten)]
         common: SsoCommonArgs,
+
         /// Optional formatting arguments for the output
         #[clap(flatten)]
         formatting: FormatCommonArgs,
     },
-    /// The `ListAccountRoles` subcommand is used to list all roles available for a specific AWS account in the SSO configuration.
+
+    /// Display available roles for a specific AWS account
+    ///
+    /// Lists all IAM roles available for the specified account through AWS SSO.
     ListAccountRoles {
         #[clap(flatten)]
         common: SsoCommonArgs,
-        /// AWS Account ID to list roles for
+
+        /// AWS Account ID to list roles for (12 digits)
         #[arg(short = ARG_SHORT_ACCOUNT, long, value_parser=validate_account_id)]
         account: String,
+
         /// Optional formatting arguments for the output
         #[clap(flatten)]
         formatting: FormatCommonArgs,
@@ -320,70 +373,80 @@ pub enum Sso {
 
 #[derive(Args)]
 pub struct BatchCommonArgs {
-    /// Target specific AWS accounts (ignored when using aliases or regex filters)
-    #[arg(short = 'a', long)]
+    /// AWS Account IDs to target (comma-separated list)
+    /// Ignored when using aliases or regex filters
+    #[arg(short = 'a', long, value_delimiter = ',')]
     pub account_ids: Option<Vec<String>>,
 
-    /// IAM roles to try in order (will use first successful role)
+    /// IAM roles to attempt in priority order
+    /// First successful role will be used for operations
     #[arg(short = 'R', long)]
     pub role_order: Option<Vec<String>>,
 
-    /// Target accounts by their aliases
-    #[arg(short = 'A', long)]
+    /// Target accounts by configured aliases (comma-separated list)
+    #[arg(short = 'A', long, value_delimiter = ',')]
     pub aliases: Option<Vec<String>>,
 
-    /// Filter accounts by name using Rust regex pattern
+    /// Filter accounts by name using regular expression pattern
     #[arg(short = 'f', long)]
     pub account_filter_regex: Option<String>,
 
-    /// AWS region for operations (defaults to eu-west-2)
+    /// AWS region for operations
+    /// Default: eu-west-2
     #[arg(short = ARG_SHORT_REGION, long, default_value_t=String::from("eu-west-2"))]
     pub region: String,
 
-    /// Number of concurrent operations (defaults to 1)
+    /// Number of concurrent operations to perform
+    /// Default: 1 (sequential processing)
     #[arg(short = 'p', long, default_value_t = 1)]
     pub parallel: usize,
 
-    /// Custom directory for SSO token storage
+    /// Custom directory for storing SSO authentication tokens
+    /// Default: Value specified for config-dir
     #[arg(long)]
     pub sso_cache_dir: Option<PathBuf>,
 
-    /// Custom AWS Auth config location (can be set via AWS_AUTH_CONFIG_DIR)
+    /// Custom directory for AWS Auth configuration
+    /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
+    /// Default: ~/.aws-auth
     #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
     pub config_dir: Option<PathBuf>,
 
-    /// Force new credentials instead of using cached ones
+    /// Force new credential retrieval instead of using cached credentials
+    /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
 
-    /// Stops logs printed to stderr
+    /// Suppress status and progress messages
+    /// Default: false (show operational logs)
     #[arg(short = 's', long, default_value_t = false)]
     pub silent: bool,
 }
 
-/// Batch commands for running operations across multiple AWS accounts
+/// Batch commands for operations across multiple AWS accounts
 #[derive(Subcommand)]
 pub enum Batch {
-    /// The `Exec` subcommand is used to execute the provided command
-    /// with AWS credentials.
-    /// This allows you to execute external commands such as AWS CLI commands
-    /// with the appropriate AWS credentials.
-    /// Batch exec would run the provided command with credentials fromm filtered
-    /// accounts.
+    /// Execute a command across multiple AWS accounts
+    ///
+    /// Runs the specified command with appropriate credentials for each
+    /// account that matches the filtering criteria.
     Exec {
         #[clap(flatten)]
         batch_common: BatchCommonArgs,
 
-        /// Hide command output when running
+        /// Hide command output during execution
+        /// Default: false (display command output)
         #[arg(short = 's', long, default_value_t = false)]
         suppress_output: bool,
 
-        /// Directory to save command output files (one per account)
-        /// If suppress_output is enabled, this takes no affect
+        /// Directory to save per-account output files
+        /// No effect if suppress_output is enabled
         #[arg(short = 'o', long)]
         output_dir: Option<PathBuf>,
 
-        /// Command to execute (must be specified after --)
+        /// Command and arguments to execute
+        /// Must be provided after -- separator
+        /// Example: aws-auth batch exec -A prod-account -- aws s3 ls
         #[arg(trailing_var_arg = true)]
         arguments: Vec<String>,
     },
