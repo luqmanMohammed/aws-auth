@@ -375,16 +375,16 @@ pub enum Sso {
 pub struct BatchCommonArgs {
     /// AWS Account IDs to target (comma-separated list)
     /// Ignored when using aliases or regex filters
-    #[arg(short = 'a', long, value_delimiter = ',')]
+    #[arg(short = ARG_SHORT_ACCOUNT, long, value_delimiter = ',')]
     pub account_ids: Option<Vec<String>>,
 
     /// IAM roles to attempt in priority order
     /// First successful role will be used for operations
-    #[arg(short = 'R', long)]
+    #[arg(short = ARG_SHORT_ROLE, long)]
     pub role_order: Option<Vec<String>>,
 
     /// Target accounts by configured aliases (comma-separated list)
-    #[arg(short = 'A', long, value_delimiter = ',')]
+    #[arg(short = ARG_SHORT_ALIAS, long, value_delimiter = ',')]
     pub aliases: Option<Vec<String>>,
 
     /// Filter accounts by name using regular expression pattern
@@ -417,10 +417,10 @@ pub struct BatchCommonArgs {
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
 
-    /// Suppress status and progress messages
-    /// Default: false (show operational logs)
-    #[arg(short = 's', long, default_value_t = false)]
-    pub silent: bool,
+    /// Show status and progress messages
+    /// Default: false (Do not show operational logs)
+    #[arg(short = 'd', long, default_value_t = false)]
+    pub debug: bool,
 }
 
 /// Batch commands for operations across multiple AWS accounts
@@ -436,7 +436,7 @@ pub enum Batch {
 
         /// Hide command output during execution
         /// Default: false (display command output)
-        #[arg(short = 's', long, default_value_t = false)]
+        #[arg(short = 'S', long, default_value_t = false)]
         suppress_output: bool,
 
         /// Directory to save per-account output files

@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! elog {
-    ($silent:expr, $($args:tt)*) => {
-        if !$silent {
+    ($enabled:expr, $($args:tt)*) => {
+        if $enabled {
             eprintln!($($args)*)
         }
     };

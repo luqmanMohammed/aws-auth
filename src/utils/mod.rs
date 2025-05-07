@@ -1,5 +1,6 @@
 pub mod elog;
 pub mod formatters;
+pub mod worker;
 
 use crate::alias_providers::ProvideAliases;
 use crate::cmd::{AssumeInput, CommonArgs};
