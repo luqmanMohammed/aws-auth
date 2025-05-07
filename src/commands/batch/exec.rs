@@ -63,6 +63,7 @@ impl Job for ExecJob {
     fn execute(self) -> Result<Self::Output, Self::Error> {
         if self.suppress_output {
             exec::<File, File>(
+                &self.account_id,
                 &self.arguments,
                 self.credentials,
                 &self.region,
@@ -76,6 +77,7 @@ impl Job for ExecJob {
             let mut stdout_file = File::create(stdout_path)?;
             let mut stderr_file = File::create(stderr_path)?;
             exec::<File, File>(
+                &self.account_id,
                 &self.arguments,
                 self.credentials,
                 &self.region,
@@ -85,6 +87,7 @@ impl Job for ExecJob {
             )
         } else {
             exec::<File, File>(
+                &self.account_id,
                 &self.arguments,
                 self.credentials,
                 &self.region,
@@ -97,6 +100,7 @@ impl Job for ExecJob {
 }
 
 fn exec<W1: Write + Send + 'static, W2: Write + Send + 'static>(
+    account_id: &str,
     arguments: &[String],
     credentials: Credentials,
     region: &str,
@@ -111,6 +115,7 @@ fn exec<W1: Write + Send + 'static, W2: Write + Send + 'static>(
     command.args(args);
 
     // Set credentials
+    command.env("AWS_ACCOUNT_ID", account_id);
     command.env("AWS_REGION", region);
     command.env("AWS_ACCESS_KEY_ID", credentials.access_key_id());
     command.env("AWS_SECRET_ACCESS_KEY", credentials.secret_access_key());
