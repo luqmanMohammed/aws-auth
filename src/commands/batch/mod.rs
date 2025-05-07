@@ -1,13 +1,12 @@
 mod exec;
-mod worker;
 
 use std::collections::HashMap;
 
+use crate::utils::worker::ThreadPool;
 use aws_sdk_ssooidc::config::Credentials;
 use exec::ExecJob;
 use regex::Regex;
 use std::sync::Arc;
-use worker::ThreadPool;
 
 use crate::{
     alias_providers::{self, AliasProviderError, ProvideAliases},
@@ -27,6 +26,7 @@ pub enum Error {
     MissingRequiredArg(String),
     AliasProvider(AliasProviderError),
     Regex(regex::Error),
+    ValidationFailed(String),
 }
 
 impl std::error::Error for Error {}
@@ -38,11 +38,19 @@ impl std::fmt::Display for Error {
             Error::MissingRequiredArg(err) => write!(f, "Provide arguments: {}", err),
             Error::AliasProvider(err) => write!(f, "Error getting alias: {}", err),
             Error::Regex(err) => write!(f, "Invalid regex provided: {}", err),
+            Error::ValidationFailed(err) => write!(f, "Command Input validation failed: {}", err),
         }
     }
 }
 
 pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
+    match &subcommand {
+        Batch::Exec { arguments, .. } => {
+            exec::ExecJob::validate(arguments)
+                .map_err(|err| Error::ValidationFailed(err.to_string()))?;
+        }
+    }
+
     let batch_common = subcommand.get_common_args();
     let config_dir = resolve_config_dir(batch_common.config_dir.as_deref());
     let cache_dir = batch_common.sso_cache_dir.as_deref().unwrap_or(&config_dir);
@@ -133,12 +141,12 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
             .await
         {
             Ok(credentials) => {
-                elog!(batch_common.silent, "Succesffuly resolved credentials for account {account_id} using the {role_name} role");
+                elog!(batch_common.debug, "Succesffuly resolved credentials for account {account_id} using the {role_name} role");
                 credentials_map.insert(account_id.clone(), credentials);
             }
             Err(err) => {
                 if let AwsSsoManagerError::SsoGetRoleCredentials(_) = err {
-                    elog!(batch_common.silent, "Unauthorized to resolve credentials for account {account_id} using the {role_name} role");
+                    elog!(batch_common.debug, "Unauthorized to resolve credentials for account {account_id} using the {role_name} role");
                 } else {
                     Err(Error::AwsSso(err))?;
                 }
@@ -156,7 +164,11 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
             batch_common,
         } => {
             let arguments: Arc<[String]> = Arc::from(arguments.into_boxed_slice());
-            let worker_pool: ThreadPool<ExecJob> = ThreadPool::new(batch_common.parallel, false);
+            let _ = &arguments
+                .first()
+                .ok_or(Error::MissingRequiredArg("Missing program".to_string()))?;
+            let worker_pool: ThreadPool<ExecJob> =
+                ThreadPool::new(batch_common.parallel, batch_common.debug);
             let output_dir = output_dir.map(Arc::new);
             let region = Arc::new(batch_common.region);
             for (account_id, credentials) in credentials_map {
@@ -169,6 +181,8 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                     region: region.clone(),
                 });
             }
+            let result = worker_pool.wait();
+            elog!(batch_common.debug, "{result:?}");
         }
     }
 

@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::thread;
 
-use super::worker::Job;
+use crate::utils::worker::Job;
 
 #[derive(Debug)]
 pub enum Error {
@@ -35,6 +35,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+#[derive(Debug)]
 pub struct ExecJob {
     pub account_id: String,
     pub credentials: Credentials,
@@ -44,12 +45,22 @@ pub struct ExecJob {
     pub output_base_path: Option<Arc<PathBuf>>,
 }
 
+impl ExecJob {
+    pub fn validate(arguments: &[String]) -> Result<(), Error> {
+        let _ = arguments.first().ok_or(Error::MissingProgram)?;
+        Ok(())
+    }
+}
+
 impl Job for ExecJob {
+    type Error = Error;
+    type Output = usize;
+
     fn get_job_id(&self) -> &str {
         &self.account_id
     }
 
-    fn execute(self) {
+    fn execute(self) -> Result<Self::Output, Self::Error> {
         if self.suppress_output {
             exec::<File, File>(
                 &self.arguments,
@@ -59,13 +70,11 @@ impl Job for ExecJob {
                 None,
                 None,
             )
-            .unwrap();
         } else if let Some(base_path) = self.output_base_path {
             let stdout_path = base_path.join(format!("{}-stdout.log", self.account_id));
             let stderr_path = base_path.join(format!("{}-stderr.log", self.account_id));
-            // Unwrapping as panic is handled by the thread pool
-            let mut stdout_file = File::create(stdout_path).unwrap();
-            let mut stderr_file = File::create(stderr_path).unwrap();
+            let mut stdout_file = File::create(stdout_path)?;
+            let mut stderr_file = File::create(stderr_path)?;
             exec::<File, File>(
                 &self.arguments,
                 self.credentials,
@@ -74,7 +83,6 @@ impl Job for ExecJob {
                 Some(&mut stdout_file),
                 Some(&mut stderr_file),
             )
-            .unwrap();
         } else {
             exec::<File, File>(
                 &self.arguments,
@@ -84,7 +92,6 @@ impl Job for ExecJob {
                 None,
                 None,
             )
-            .unwrap();
         }
     }
 }
