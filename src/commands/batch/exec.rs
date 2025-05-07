@@ -147,9 +147,9 @@ fn exec<W1: Write + Send + 'static, W2: Write + Send + 'static>(
         };
 
         let stderr_handle = if let Some(stderr_writer) = redirect_stderr {
-            child.stdout.take().map(|stdout| {
+            child.stderr.take().map(|stderr| {
                 s.spawn(move || {
-                    let mut reader = BufReader::new(stdout);
+                    let mut reader = BufReader::new(stderr);
                     io::copy(&mut reader, stderr_writer)
                 })
             })
