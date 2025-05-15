@@ -447,7 +447,7 @@ pub enum Batch {
         /// Command and arguments to execute
         /// Must be provided after -- separator
         /// Example: aws-auth batch exec -A prod-account -- aws s3 ls
-        #[arg(trailing_var_arg = true)]
+        #[arg(trailing_var_arg = true, required = true)]
         arguments: Vec<String>,
     },
 }
