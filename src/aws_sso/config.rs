@@ -26,6 +26,11 @@ pub struct AwsSsoConfig {
     pub initial_delay: Option<Duration>,
     #[serde(rename = "retryInterval", skip_serializing_if = "Option::is_none")]
     pub retry_interval: Option<Duration>,
+    #[serde(
+        rename = "createTokenRetryThreshold",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub create_token_retry_threshold: Option<u64>,
 }
 
 impl std::fmt::Display for Error {

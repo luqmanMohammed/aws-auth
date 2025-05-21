@@ -5,6 +5,7 @@ mod types;
 
 use std::path::Path;
 
+use crate::utils::lock::JsonCounterLockProvider;
 use auth::AuthManager;
 use aws_config::Region;
 use cache::{mono_json::MonoJsonCacheManager, CacheRefMut};
@@ -13,8 +14,10 @@ use config::AwsSsoConfig;
 
 pub type CacheManager = MonoJsonCacheManager;
 pub type CacheManagerError = cache::mono_json::Error;
-pub type AwsSsoManager<'a> = AuthManager<'a, CacheManager>;
-pub type AwsSsoManagerError = auth::Error<CacheManagerError>;
+pub type LockProvider = JsonCounterLockProvider;
+pub type LockProviderError = std::io::Error;
+pub type AwsSsoManager<'a> = AuthManager<'a, CacheManager, LockProvider>;
+pub type AwsSsoManagerError = auth::Error<CacheManagerError, LockProviderError>;
 
 fn build_aws_sso_manager<'a>(
     cache_manager: impl Into<CacheRefMut<'a, CacheManager>>,
@@ -29,6 +32,11 @@ fn build_aws_sso_manager<'a>(
     let retry_interval = config
         .retry_interval
         .map(|d| Duration::from_std(d).expect("Config should be valid"));
+
+    let lock_provider = config.create_token_retry_threshold.map(|threshold| {
+        JsonCounterLockProvider::new(config_dir, "aws-sso-create-token-lock", threshold)
+    });
+
     AwsSsoManager::new(
         cache_manager,
         config.start_url,
@@ -38,6 +46,7 @@ fn build_aws_sso_manager<'a>(
         retry_interval,
         None,
         handle_cache,
+        lock_provider,
     )
 }
 

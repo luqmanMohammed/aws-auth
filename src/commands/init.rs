@@ -14,6 +14,7 @@ pub struct ExecInitInputs {
     pub max_attempts: Option<usize>,
     pub initial_delay: Option<std::time::Duration>,
     pub retry_interval: Option<std::time::Duration>,
+    pub create_token_retry_threshold: Option<u64>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -53,6 +54,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         max_attempts: exec_inputs.max_attempts,
         initial_delay: exec_inputs.initial_delay,
         retry_interval: exec_inputs.retry_interval,
+        create_token_retry_threshold: exec_inputs.create_token_retry_threshold,
     };
     let config = InitConfig { sso_config };
     let config_path = config_dir.join("config.json");

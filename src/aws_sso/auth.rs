@@ -1,6 +1,7 @@
 use super::cache::CacheRefMut;
 use crate::aws_sso::cache::ManageCache;
 use crate::aws_sso::types::ClientInformation;
+use crate::utils::lock::CounterLockProvider;
 use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
 use aws_sdk_sso::operation::get_role_credentials::GetRoleCredentialsError;
 use aws_sdk_sso::operation::list_account_roles::ListAccountRolesError;
@@ -26,7 +27,10 @@ const DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS: usize = 10;
 const EXPECT_MESSAGE: &str = "Should be present, caller pub function assume_role asures it";
 
 #[derive(Debug)]
-pub enum Error<CE: 'static + std::error::Error + std::fmt::Debug> {
+pub enum Error<
+    CE: 'static + std::error::Error + std::fmt::Debug,
+    LE: 'static + std::error::Error + std::fmt::Debug,
+> {
     OidcRegisterClient(SdkError<RegisterClientError, Response>),
     OidcStartDeviceAuthorization(SdkError<StartDeviceAuthorizationError, Response>),
     OidcWebBrowserApprove(std::io::Error),
@@ -36,9 +40,15 @@ pub enum Error<CE: 'static + std::error::Error + std::fmt::Debug> {
     OidcListAccounts(SdkError<ListAccountsError, Response>),
     OidcListAccountRoles(SdkError<ListAccountRolesError, Response>),
     Cache(CE),
+    LockProvider(LE),
+    UpstreamLocked,
 }
 
-impl<CE: 'static + std::error::Error + std::fmt::Debug> std::fmt::Display for Error<CE> {
+impl<
+        CE: 'static + std::error::Error + std::fmt::Debug,
+        LE: 'static + std::error::Error + std::fmt::Debug,
+    > std::fmt::Display for Error<CE, LE>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::OidcRegisterClient(err) => writeln!(f, "Oidc Register Client Error: {}", err),
@@ -62,15 +72,24 @@ impl<CE: 'static + std::error::Error + std::fmt::Debug> std::fmt::Display for Er
             Error::OidcListAccountRoles(err) => {
                 writeln!(f, "Oidc List Account Roles Error: {}", err)
             }
+            Error::LockProvider(_) => todo!(),
+            Error::UpstreamLocked => {
+                writeln!(f, "Maximum retry attempts reached, upstream locked to prevent IP ban by AWS. Use aws-auth unlock to unlock.")
+            }
         }
     }
 }
 
-impl<CE: 'static + std::error::Error + std::fmt::Debug> std::error::Error for Error<CE> {}
+impl<
+        CE: 'static + std::error::Error + std::fmt::Debug,
+        LE: 'static + std::error::Error + std::fmt::Debug,
+    > std::error::Error for Error<CE, LE>
+{
+}
 
-type Result<T, CE> = std::result::Result<T, Error<CE>>;
+type Result<T, CE, LE> = std::result::Result<T, Error<CE, LE>>;
 
-pub struct AuthManager<'a, C>
+pub struct AuthManager<'a, C, L>
 where
     C: 'static + ManageCache,
 {
@@ -81,16 +100,18 @@ where
     initial_delay: Duration,
     max_attempts: usize,
     retry_interval: Duration,
+    upstream_lock: Option<L>,
 
     client_info: ClientInformation,
     code_writer: Box<dyn std::io::Write + 'static>,
     handle_cache: bool,
 }
 
-impl<'a, C> AuthManager<'a, C>
+impl<'a, C, L> AuthManager<'a, C, L>
 where
     C: 'static + ManageCache,
     C::Error: 'static + std::error::Error + std::fmt::Debug,
+    L: 'static + CounterLockProvider,
 {
     /// TODO: Refactor into a input type
     #[allow(clippy::too_many_arguments)]
@@ -103,6 +124,7 @@ where
         retry_interval: Option<Duration>,
         code_writer: Option<Box<dyn std::io::Write + 'static>>,
         handle_cache: bool,
+        upstream_lock: Option<L>,
     ) -> Self {
         let sdk_config = SdkConfig::builder()
             .app_name(AppName::new(OIDC_APP_NAME).expect("Const app name should be valid"))
@@ -126,6 +148,7 @@ where
                 None => Box::new(std::io::stderr()),
             },
             handle_cache,
+            upstream_lock,
         }
     }
 
@@ -133,10 +156,21 @@ where
         &mut self,
         resolver: F,
         ignore_cache: bool,
-    ) -> Result<T, C::Error>
+    ) -> Result<T, C::Error, L::Error>
     where
-        F: AsyncFnOnce(&mut Self) -> Result<T, C::Error>,
+        F: AsyncFnOnce(&mut Self) -> Result<T, C::Error, L::Error>,
     {
+        if self.upstream_lock.is_some() {
+            self.upstream_lock
+                .as_mut()
+                .unwrap()
+                .load_lock()
+                .map_err(Error::LockProvider)?;
+            if self.upstream_lock.as_mut().unwrap().get_lock().is_locked() {
+                return Err(Error::UpstreamLocked);
+            }
+        }
+
         if self.handle_cache {
             self.load_cache(ignore_cache);
         }
@@ -166,7 +200,7 @@ where
     pub async fn list_accounts(
         &mut self,
         ignore_cache: bool,
-    ) -> Result<Vec<AccountInfo>, C::Error> {
+    ) -> Result<Vec<AccountInfo>, C::Error, L::Error> {
         self.prepare_sso_and_resolve(
             async |auth| {
                 let access_token = auth
@@ -201,7 +235,7 @@ where
         &mut self,
         account_id: &str,
         ignore_cache: bool,
-    ) -> Result<Vec<RoleInfo>, C::Error> {
+    ) -> Result<Vec<RoleInfo>, C::Error, L::Error> {
         self.prepare_sso_and_resolve(
             async |auth| {
                 let access_token = auth
@@ -236,7 +270,7 @@ where
         role_name: &str,
         refresh_sts_token: bool,
         ignore_cache: bool,
-    ) -> Result<Credentials, C::Error> {
+    ) -> Result<Credentials, C::Error, L::Error> {
         self.prepare_sso_and_resolve(
             async |auth| {
                 let credentials = if refresh_sts_token {
@@ -270,7 +304,7 @@ where
         self.client_info.start_url = Some(self.start_url.clone());
     }
 
-    async fn register_client(&mut self) -> Result<(), C::Error> {
+    async fn register_client(&mut self) -> Result<(), C::Error, L::Error> {
         let register_client = self
             .oidc_client
             .register_client()
@@ -288,7 +322,7 @@ where
         Ok(())
     }
 
-    async fn create_access_token(&mut self) -> Result<(), C::Error> {
+    async fn create_access_token(&mut self) -> Result<(), C::Error, L::Error> {
         let device_auth = self
             .oidc_client
             .start_device_authorization()
@@ -346,7 +380,13 @@ where
                 .await
             {
                 Ok(token) => break Ok(token),
-                Err(err) if attempts >= self.max_attempts => break Err(err),
+                Err(err) if attempts >= self.max_attempts => {
+                    if let Some(ref mut lock) = self.upstream_lock {
+                        lock.get_lock_mut().increment(1);
+                        lock.save_lock().map_err(Error::LockProvider)?;
+                    }
+                    break Err(err);
+                }
                 Err(_) => {
                     thread::sleep(interval.to_std().unwrap());
                     attempts += 1;
@@ -362,7 +402,7 @@ where
         Ok(())
     }
 
-    async fn refresh_access_token(&mut self) -> Result<(), C::Error> {
+    async fn refresh_access_token(&mut self) -> Result<(), C::Error, L::Error> {
         let create_token = self
             .oidc_client
             .create_token()
@@ -394,7 +434,7 @@ where
         &self,
         role_name: &str,
         account_id: &str,
-    ) -> Result<Credentials, C::Error> {
+    ) -> Result<Credentials, C::Error, L::Error> {
         let credentials = self
             .sso_client
             .get_role_credentials()
@@ -426,5 +466,12 @@ where
             ),
             "role-credentials",
         ))
+    }
+
+    async fn logout(&mut self) -> Result<(), C::Error, L::Error> {
+        self.cache_manager.load_cache().map_err(Error::Cache)?;
+        
+        self.cache_manager.commit().map_err(Error::Cache)?;
+        Ok(())
     }
 }

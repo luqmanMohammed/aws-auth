@@ -193,6 +193,11 @@ pub trait ManageCache {
 
         ninfo
     }
+
+    fn cache_reset(&mut self) {
+        self.get_cache_as_mut().client_info = ClientInformation::default();
+        self.get_cache_as_mut().sessions = HashMap::new();
+    }
 }
 
 pub mod mono_json {

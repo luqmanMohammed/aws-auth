@@ -15,6 +15,7 @@ use commands::{
     core::exec_core_commands,
     init::{self, ExecInitInputs},
     sso::exec_sso,
+    unlock::exec_unlock,
 };
 
 use std::error::Error;
@@ -35,6 +36,7 @@ async fn main() -> Result<(), String> {
             retry_interval_secounds,
             config_dir,
             recreate,
+            create_token_retry_threshold,
         } => {
             init::exec_init(ExecInitInputs {
                 config_dir,
@@ -44,6 +46,7 @@ async fn main() -> Result<(), String> {
                 max_attempts,
                 initial_delay: initial_delay_secounds.map(std::time::Duration::from_secs),
                 retry_interval: retry_interval_secounds.map(std::time::Duration::from_secs),
+                create_token_retry_threshold,
             })
             .map_err(error_to_string)?;
         }
@@ -53,6 +56,9 @@ async fn main() -> Result<(), String> {
         Commands::Alias { subcommand } => exec_alias(subcommand).map_err(error_to_string)?,
         Commands::Sso { subcommand } => exec_sso(subcommand).await.map_err(error_to_string)?,
         Commands::Batch { subcommand } => exec_batch(subcommand).await.map_err(error_to_string)?,
+        Commands::Unlock { config_dir } => {
+            exec_unlock(config_dir.as_deref()).map_err(error_to_string)?
+        }
     }
     Ok(())
 }

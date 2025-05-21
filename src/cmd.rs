@@ -146,6 +146,14 @@ pub enum Commands {
         /// Default: false (preserve existing configuration)
         #[arg(short = 'e', long, default_value_t = false)]
         recreate: bool,
+
+        /// Threshold for creating a lock file to lock calls to create SSO token.
+        /// This is used to prevent getting an IP ban from AWS when an automated process
+        /// tries to get credentials without backing off.
+        /// If locked use the aws-auth unlock command to unlock the process.
+        /// Disabled by default.
+        #[arg(short = 'T', long)]
+        create_token_retry_threshold: Option<u64>,
     },
 
     #[clap(flatten)]
@@ -176,6 +184,17 @@ pub enum Commands {
     Batch {
         #[clap(subcommand)]
         subcommand: Batch,
+    },
+
+    /// Unlocks the create token process.
+    /// Create Token retry lock is used to prevent getting an IP ban from AWS when an automated process
+    /// tries to get credentials without backing off.
+    Unlock {
+        /// Custom directory for AWS Auth configuration
+        /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
+        /// Default: ~/.aws-auth
+        #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
+        config_dir: Option<PathBuf>,
     },
 }
 
