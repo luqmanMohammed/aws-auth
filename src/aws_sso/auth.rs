@@ -129,7 +129,7 @@ where
         let sdk_config = SdkConfig::builder()
             .app_name(AppName::new(OIDC_APP_NAME).expect("Const app name should be valid"))
             .behavior_version(BehaviorVersion::latest())
-            .region(sso_region)
+            .region(sso_region.clone())
             .build();
         let oidc_client = OidcClient::new(&sdk_config);
         let sso_client = SsoClient::new(&sdk_config);
@@ -468,10 +468,22 @@ where
         ))
     }
 
-    async fn logout(&mut self) -> Result<(), C::Error, L::Error> {
+    pub async fn logout(mut self) -> Result<(), C::Error, L::Error> {
         self.cache_manager.load_cache().map_err(Error::Cache)?;
-        
+        if let Some(access_token) = self.cache_manager.get_access_token() {
+            let _ = self
+                .sso_client
+                .logout()
+                .access_token(access_token)
+                .send()
+                .await;
+        }
+        self.cache_manager.cache_reset();
         self.cache_manager.commit().map_err(Error::Cache)?;
+        if let Some(mut upstream_lock) = self.upstream_lock {
+            upstream_lock.get_lock_mut().reset();
+            upstream_lock.save_lock().map_err(Error::LockProvider)?;
+        }
         Ok(())
     }
 }

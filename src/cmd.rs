@@ -116,11 +116,11 @@ pub enum Commands {
     Init {
         /// SSO start URL for AWS Identity Center (e.g., https://my-company.awsapps.com/start)
         #[arg(short, long)]
-        sso_start_url: String,
+        sso_start_url: Option<String>,
 
         /// AWS region where the SSO service is hosted (e.g., us-east-1)
         #[arg(short = 'r', long)]
-        sso_region: String,
+        sso_region: Option<String>,
 
         /// Maximum authentication retry attempts
         /// Default: 10
@@ -128,12 +128,12 @@ pub enum Commands {
         max_attempts: Option<usize>,
 
         /// Initial delay in seconds before first retry attempt
-        /// Default: 10s
+        /// Default: 10
         #[arg(short, long)]
         initial_delay_secounds: Option<u64>,
 
         /// Interval in seconds between retry attempts
-        /// Default: 5s
+        /// Default: 5
         #[arg(short = 't', long)]
         retry_interval_secounds: Option<u64>,
 
@@ -144,14 +144,26 @@ pub enum Commands {
 
         /// Recreate configuration directory if it already exists
         /// Default: false (preserve existing configuration)
-        #[arg(short = 'e', long, default_value_t = false)]
+        #[arg(short = 'R', long, conflicts_with = "update", default_value_t = false)]
         recreate: bool,
+
+        /// Update existing configuration if it already exists
+        /// Default: false (preserve existing configuration)
+        /// This option is mutually exclusive with recreate.
+        #[arg(
+            short = 'U',
+            long,
+            conflicts_with = "recreate",
+            default_value_t = false
+        )]
+        update: bool,
 
         /// Threshold for creating a lock file to lock calls to create SSO token.
         /// This is used to prevent getting an IP ban from AWS when an automated process
         /// tries to get credentials without backing off.
         /// If locked use the aws-auth unlock command to unlock the process.
-        /// Disabled by default.
+        /// Set to 0 to disable locking.
+        /// Default: 5
         #[arg(short = 'T', long)]
         create_token_retry_threshold: Option<u64>,
     },
@@ -195,6 +207,20 @@ pub enum Commands {
         /// Default: ~/.aws-auth
         #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
         config_dir: Option<PathBuf>,
+    },
+
+    /// Logout from AWS SSO and clear cached credentials
+    Logout {
+        /// Custom directory for AWS Auth configuration
+        /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
+        /// Default: ~/.aws-auth
+        #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
+        config_dir: Option<PathBuf>,
+
+        /// Custom directory for storing SSO authentication tokens
+        /// Default: Value specified for config-dir
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
     },
 }
 

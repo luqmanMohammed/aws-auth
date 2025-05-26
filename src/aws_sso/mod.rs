@@ -19,6 +19,8 @@ pub type LockProviderError = std::io::Error;
 pub type AwsSsoManager<'a> = AuthManager<'a, CacheManager, LockProvider>;
 pub type AwsSsoManagerError = auth::Error<CacheManagerError, LockProviderError>;
 
+pub const DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD: u64 = 5;
+
 fn build_aws_sso_manager<'a>(
     cache_manager: impl Into<CacheRefMut<'a, CacheManager>>,
     config_dir: &Path,
@@ -33,9 +35,13 @@ fn build_aws_sso_manager<'a>(
         .retry_interval
         .map(|d| Duration::from_std(d).expect("Config should be valid"));
 
-    let lock_provider = config.create_token_retry_threshold.map(|threshold| {
-        JsonCounterLockProvider::new(config_dir, "aws-sso-create-token-lock", threshold)
-    });
+    let lock_provider = config
+        .create_token_retry_threshold
+        .filter(|&threshold| threshold != 0)
+        .or(Some(DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD))
+        .map(|threshold| {
+            JsonCounterLockProvider::new(config_dir, "aws-sso-create-token-lock", threshold)
+        });
 
     AwsSsoManager::new(
         cache_manager,
