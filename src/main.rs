@@ -14,6 +14,7 @@ use commands::{
     batch::exec_batch,
     core::exec_core_commands,
     init::{self, ExecInitInputs},
+    logout::exec_logout,
     sso::exec_sso,
     unlock::exec_unlock,
 };
@@ -37,6 +38,7 @@ async fn main() -> Result<(), String> {
             config_dir,
             recreate,
             create_token_retry_threshold,
+            update
         } => {
             init::exec_init(ExecInitInputs {
                 config_dir,
@@ -47,6 +49,7 @@ async fn main() -> Result<(), String> {
                 initial_delay: initial_delay_secounds.map(std::time::Duration::from_secs),
                 retry_interval: retry_interval_secounds.map(std::time::Duration::from_secs),
                 create_token_retry_threshold,
+                update
             })
             .map_err(error_to_string)?;
         }
@@ -59,6 +62,12 @@ async fn main() -> Result<(), String> {
         Commands::Unlock { config_dir } => {
             exec_unlock(config_dir.as_deref()).map_err(error_to_string)?
         }
+        Commands::Logout {
+            config_dir,
+            cache_dir,
+        } => exec_logout(config_dir.as_deref(), cache_dir.as_deref())
+            .await
+            .map_err(error_to_string)?,
     }
     Ok(())
 }
