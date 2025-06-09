@@ -57,7 +57,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
 
     let sso_config = if exec_inputs.update {
         let mut sso_config = AwsSsoConfig::load_config(&config_file)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
         if exec_inputs.sso_start_url.is_some() {
             sso_config.start_url = exec_inputs.sso_start_url.unwrap();
         }
@@ -95,7 +95,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
 
     let config_file = File::create(&config_file)?;
     serde_json::to_writer_pretty(config_file, &InitConfig { sso_config })
-        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
     println!(
         "INFO: Successfully initialized/updated configuration in {}",
         config_dir.display()

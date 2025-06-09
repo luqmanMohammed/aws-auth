@@ -7,8 +7,14 @@ use crate::utils::{
 
 #[derive(Debug)]
 pub enum Error {
-    AwsSsoManager(AwsSsoManagerError),
+    AwsSsoManager(Box<AwsSsoManagerError>),
     JsonFormatter(serde_json::Error),
+}
+
+impl From<AwsSsoManagerError> for Error{
+    fn from(value: AwsSsoManagerError) -> Self {
+        Self::AwsSsoManager(Box::new(value))
+    }
 }
 
 impl std::error::Error for Error {}
@@ -37,7 +43,7 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
             let accounts = sso_manager
                 .list_accounts(common.ignore_cache)
                 .await
-                .map_err(Error::AwsSsoManager)?;
+                ?;
 
             let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
             let accounts = accounts
@@ -81,7 +87,7 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
             let roles = sso_manager
                 .list_account_roles(&account, common.ignore_cache)
                 .await
-                .map_err(Error::AwsSsoManager)?;
+                ?;
 
             let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
             let roles = roles

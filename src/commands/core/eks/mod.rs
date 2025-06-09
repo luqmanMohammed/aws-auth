@@ -20,7 +20,7 @@ pub struct ExecEksInputs<'a> {
 
 #[derive(Debug)]
 pub enum Error {
-    AwsSso(AwsSsoManagerError),
+    AwsSso(Box<AwsSsoManagerError>),
     EksRequestSign(sign::Error),
     Cache(std::io::Error),
     Serde(serde_json::Error),
@@ -35,6 +35,12 @@ impl std::fmt::Display for Error {
             Error::Serde(err) => writeln!(f, "Invalid credential json: {}", err),
             Error::AwsSso(err) => writeln!(f, "Error resolving SSO credentials: {}", err),
         }
+    }
+}
+
+impl From<AwsSsoManagerError> for Error {
+    fn from(value: AwsSsoManagerError) -> Self {
+        Self::AwsSso(Box::new(value))
     }
 }
 
@@ -58,7 +64,7 @@ where
     let exec_creds = if let Some(hit) = cache_manager.resolve_cache_hit() {
         hit
     } else {
-        let credentials = credential_resolver().await.map_err(Error::AwsSso)?;
+        let credentials = credential_resolver().await?;
 
         let k8s_creds = sign::generate_eks_credentials(
             &credentials,

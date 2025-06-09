@@ -22,11 +22,17 @@ use crate::{
 #[derive(Debug)]
 pub enum Error {
     Cache(CacheManagerError),
-    AwsSso(AwsSsoManagerError),
+    AwsSso(Box<AwsSsoManagerError>),
     MissingRequiredArg(String),
     AliasProvider(AliasProviderError),
     Regex(regex::Error),
     ValidationFailed(String),
+}
+
+impl From<AwsSsoManagerError> for Error {
+    fn from(value: AwsSsoManagerError) -> Self {
+        Self::AwsSso(Box::new(value))
+    }
 }
 
 impl std::error::Error for Error {}
@@ -99,8 +105,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
 
             sso_manager
                 .list_accounts(batch_common.ignore_cache)
-                .await
-                .map_err(Error::AwsSso)?
+                .await?
                 .into_iter()
                 .filter(|ai| {
                     ai.account_name.as_ref().is_some()
@@ -117,8 +122,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
         } else {
             sso_manager
                 .list_accounts(batch_common.ignore_cache)
-                .await
-                .map_err(Error::AwsSso)?
+                .await?
                 .into_iter()
                 .filter(|ai| ai.account_id().is_some())
                 .flat_map(|ai| {
@@ -148,7 +152,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                 if let AwsSsoManagerError::SsoGetRoleCredentials(_) = err {
                     elog!(batch_common.debug, "Unauthorized to resolve credentials for account {account_id} using the {role_name} role");
                 } else {
-                    Err(Error::AwsSso(err))?;
+                    Err(Error::AwsSso(Box::new(err)))?;
                 }
             }
         }

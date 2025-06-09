@@ -18,10 +18,17 @@ use crate::{
 #[derive(Debug)]
 pub enum Error {
     AssumeIdResolver(String),
-    AwsSso(AwsSsoManagerError),
+    AwsSso(Box<AwsSsoManagerError>),
     CmdExec(exec::Error),
     CmdEks(eks::Error),
 }
+
+impl From<AwsSsoManagerError> for Error {
+    fn from(value: AwsSsoManagerError) -> Self {
+        Self::AwsSso(Box::new(value))
+    }
+}
+
 
 impl std::error::Error for Error {}
 
@@ -78,7 +85,7 @@ pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
             .map_err(Error::CmdEks)?;
         }
         CoreCommands::Eval { .. } => {
-            let credentials = credential_resolver().await.map_err(Error::AwsSso)?;
+            let credentials = credential_resolver().await?;
             eval::exec_eval(
                 credentials,
                 ExecEvalInputs {
@@ -87,7 +94,7 @@ pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
             );
         }
         CoreCommands::Exec { arguments, .. } => {
-            let credentials = credential_resolver().await.map_err(Error::AwsSso)?;
+            let credentials = credential_resolver().await?;
             exec::exec_exec(
                 credentials,
                 ExecExecInputs {
