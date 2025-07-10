@@ -5,7 +5,7 @@ mod types;
 
 use std::path::Path;
 
-use crate::utils::lock::JsonCounterLockProvider;
+use crate::utils::lock::DecayingJsonCounterLockProvider;
 use auth::AuthManager;
 use aws_config::Region;
 use cache::{mono_json::MonoJsonCacheManager, CacheRefMut};
@@ -14,12 +14,13 @@ use config::AwsSsoConfig;
 
 pub type CacheManager = MonoJsonCacheManager;
 pub type CacheManagerError = cache::mono_json::Error;
-pub type LockProvider = JsonCounterLockProvider;
+pub type LockProvider = DecayingJsonCounterLockProvider;
 pub type LockProviderError = std::io::Error;
 pub type AwsSsoManager<'a> = AuthManager<'a, CacheManager, LockProvider>;
 pub type AwsSsoManagerError = auth::Error<CacheManagerError, LockProviderError>;
 
 pub const DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD: u64 = 5;
+pub const DEFAULT_CREATE_TOKEN_LOCK_DECAY: chrono::Duration = chrono::Duration::seconds(2 * 3600);
 
 fn build_aws_sso_manager<'a>(
     cache_manager: impl Into<CacheRefMut<'a, CacheManager>>,
@@ -31,16 +32,28 @@ fn build_aws_sso_manager<'a>(
     let initial_delay = config
         .initial_delay
         .map(|d| Duration::from_std(d).expect("Config should be valid"));
+
     let retry_interval = config
         .retry_interval
         .map(|d| Duration::from_std(d).expect("Config should be valid"));
+
+    let create_token_lock_decay = match config.create_token_lock_decay {
+        Some(td) if td.num_seconds() == 0 => None,
+        Some(td) => Some(td),
+        None => Some(DEFAULT_CREATE_TOKEN_LOCK_DECAY),
+    };
 
     let lock_provider = config
         .create_token_retry_threshold
         .filter(|&threshold| threshold != 0)
         .or(Some(DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD))
         .map(|threshold| {
-            JsonCounterLockProvider::new(config_dir, "aws-sso-create-token-lock", threshold)
+            LockProvider::new(
+                config_dir,
+                "aws-sso-create-token-lock",
+                threshold,
+                create_token_lock_decay,
+            )
         });
 
     AwsSsoManager::new(

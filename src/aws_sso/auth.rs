@@ -160,17 +160,12 @@ where
     where
         F: AsyncFnOnce(&mut Self) -> Result<T, C::Error, L::Error>,
     {
-        if self.upstream_lock.is_some() {
-            self.upstream_lock
-                .as_mut()
-                .unwrap()
-                .load_lock()
-                .map_err(Error::LockProvider)?;
-            if self.upstream_lock.as_mut().unwrap().get_lock().is_locked() {
+        if let Some(ref mut ul) = self.upstream_lock {
+            ul.load_lock().map_err(Error::LockProvider)?;
+            if ul.get_lock().is_locked() {
                 return Err(Error::UpstreamLocked);
             }
         }
-
         if self.handle_cache {
             self.load_cache(ignore_cache);
         }
@@ -481,6 +476,7 @@ where
         self.cache_manager.cache_reset();
         self.cache_manager.commit().map_err(Error::Cache)?;
         if let Some(mut upstream_lock) = self.upstream_lock {
+            upstream_lock.load_lock().map_err(Error::LockProvider)?;
             upstream_lock.get_lock_mut().reset();
             upstream_lock.save_lock().map_err(Error::LockProvider)?;
         }

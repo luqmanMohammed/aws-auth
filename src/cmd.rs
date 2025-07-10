@@ -130,12 +130,12 @@ pub enum Commands {
         /// Initial delay in seconds before first retry attempt
         /// Default: 10
         #[arg(short, long)]
-        initial_delay_secounds: Option<u64>,
+        initial_delay_seconds: Option<u64>,
 
         /// Interval in seconds between retry attempts
         /// Default: 5
         #[arg(short = 't', long)]
-        retry_interval_secounds: Option<u64>,
+        retry_interval_seconds: Option<u64>,
 
         /// Custom directory to store the AWS SSO configuration
         /// Default: $HOME/.aws-auth
@@ -166,6 +166,15 @@ pub enum Commands {
         /// Default: 5
         #[arg(short = 'T', long)]
         create_token_retry_threshold: Option<u64>,
+
+        /// Automatically removes lock after decay seconds
+        /// When the SSO token creation is locked due to exceeding the retry threshold,
+        /// this setting determines how long (in seconds) the lock will remain active
+        /// before being automatically removed. This prevents indefinite lockouts.
+        /// Set to 0 to disable lock decay.
+        /// Default: 7200 (2 hour)
+        #[arg(short = 'D', long)]
+        create_token_lock_decay_seconds: Option<u64>,
     },
 
     #[clap(flatten)]

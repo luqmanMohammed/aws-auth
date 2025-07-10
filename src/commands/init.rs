@@ -17,6 +17,7 @@ pub struct ExecInitInputs {
     pub initial_delay: Option<std::time::Duration>,
     pub retry_interval: Option<std::time::Duration>,
     pub create_token_retry_threshold: Option<u64>,
+    pub create_token_lock_decay: Option<chrono::Duration>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -76,6 +77,9 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         if exec_inputs.create_token_retry_threshold.is_some() {
             sso_config.create_token_retry_threshold = exec_inputs.create_token_retry_threshold;
         }
+        if exec_inputs.create_token_lock_decay.is_some() {
+            sso_config.create_token_lock_decay = exec_inputs.create_token_lock_decay
+        }
         sso_config
     } else if exec_inputs.sso_start_url.is_some() || exec_inputs.sso_region.is_some() {
         AwsSsoConfig {
@@ -85,6 +89,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
             initial_delay: exec_inputs.initial_delay,
             retry_interval: exec_inputs.retry_interval,
             create_token_retry_threshold: exec_inputs.create_token_retry_threshold,
+            create_token_lock_decay: exec_inputs.create_token_lock_decay,
         }
     } else {
         Err(std::io::Error::new(

@@ -31,6 +31,11 @@ pub struct AwsSsoConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub create_token_retry_threshold: Option<u64>,
+    #[serde(
+        rename = "createTokenLockDecay",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub create_token_lock_decay: Option<chrono::Duration>,
 }
 
 impl std::fmt::Display for Error {

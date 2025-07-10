@@ -33,12 +33,13 @@ async fn main() -> Result<(), String> {
             sso_start_url,
             sso_region,
             max_attempts,
-            initial_delay_secounds,
-            retry_interval_secounds,
+            initial_delay_seconds,
+            retry_interval_seconds,
             config_dir,
             recreate,
             create_token_retry_threshold,
-            update
+            create_token_lock_decay_seconds,
+            update,
         } => {
             init::exec_init(ExecInitInputs {
                 config_dir,
@@ -46,10 +47,12 @@ async fn main() -> Result<(), String> {
                 sso_start_url,
                 sso_region,
                 max_attempts,
-                initial_delay: initial_delay_secounds.map(std::time::Duration::from_secs),
-                retry_interval: retry_interval_secounds.map(std::time::Duration::from_secs),
+                initial_delay: initial_delay_seconds.map(std::time::Duration::from_secs),
+                retry_interval: retry_interval_seconds.map(std::time::Duration::from_secs),
+                create_token_lock_decay: create_token_lock_decay_seconds
+                    .map(|s| chrono::Duration::seconds(s as i64)),
                 create_token_retry_threshold,
-                update
+                update,
             })
             .map_err(error_to_string)?;
         }
