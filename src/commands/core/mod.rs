@@ -29,7 +29,6 @@ impl From<AwsSsoManagerError> for Error {
     }
 }
 
-
 impl std::error::Error for Error {}
 
 impl std::fmt::Display for Error {

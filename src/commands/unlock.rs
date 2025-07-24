@@ -20,7 +20,7 @@ pub fn exec_unlock(config_dir: Option<&Path>) -> Result<(), LockProviderError> {
             config
                 .create_token_retry_threshold
                 .unwrap_or(DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD),
-            None
+            None,
         );
         if let Err(err) = lock_provider.load_lock() {
             if err.kind() == std::io::ErrorKind::NotFound {

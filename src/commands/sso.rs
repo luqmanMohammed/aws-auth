@@ -11,7 +11,7 @@ pub enum Error {
     JsonFormatter(serde_json::Error),
 }
 
-impl From<AwsSsoManagerError> for Error{
+impl From<AwsSsoManagerError> for Error {
     fn from(value: AwsSsoManagerError) -> Self {
         Self::AwsSsoManager(Box::new(value))
     }
@@ -40,10 +40,7 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
             let mut sso_manager =
                 build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref());
 
-            let accounts = sso_manager
-                .list_accounts(common.ignore_cache)
-                .await
-                ?;
+            let accounts = sso_manager.list_accounts(common.ignore_cache).await?;
 
             let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
             let accounts = accounts
@@ -86,8 +83,7 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
 
             let roles = sso_manager
                 .list_account_roles(&account, common.ignore_cache)
-                .await
-                ?;
+                .await?;
 
             let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
             let roles = roles
