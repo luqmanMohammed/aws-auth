@@ -22,6 +22,7 @@ const ARG_SHORT_REFRESH_STS_TOKEN: char = 't';
 const ARG_SHORT_REGION: char = 'R';
 // EKS-specific argument short flag
 const ARG_SHORT_CLUSTER: char = 'c';
+const ARG_SHORT_EVAL_OUTPUT: char = 'O';
 
 /// Defines output format options for command results
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -37,6 +38,24 @@ impl std::fmt::Display for OutputFormat {
         match self {
             OutputFormat::Json => write!(f, "json"),
             OutputFormat::Text => write!(f, "text"),
+        }
+    }
+}
+
+/// Defines output format options for eval command results
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum EvalOutputFormat {
+    /// JSON formatted output for programmatic consumption
+    Json,
+    /// Plain text formatted output for shell readability
+    Eval,
+}
+
+impl std::fmt::Display for EvalOutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvalOutputFormat::Json => write!(f, "json"),
+            EvalOutputFormat::Eval => write!(f, "eval"),
         }
     }
 }
@@ -262,9 +281,14 @@ pub enum CoreCommands {
     ///
     /// Prints environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, etc.)
     /// for use with shell evaluation (eval) to configure credentials in current shell.
+    /// Or output credentials in the JSON format for programatic access
     Eval {
         #[clap(flatten)]
         common: CommonArgs,
+
+        /// Output format
+        #[arg(long, short=ARG_SHORT_EVAL_OUTPUT, default_value_t=EvalOutputFormat::Eval)]
+        output: EvalOutputFormat
     },
 
     /// Execute a command with AWS credentials

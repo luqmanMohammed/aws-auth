@@ -83,12 +83,13 @@ pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
             .await
             .map_err(Error::CmdEks)?;
         }
-        CoreCommands::Eval { .. } => {
+        CoreCommands::Eval { output, .. } => {
             let credentials = credential_resolver().await?;
             eval::exec_eval(
                 credentials,
                 ExecEvalInputs {
                     region: Region::new(common_args.region.clone()),
+                    output
                 },
             );
         }
