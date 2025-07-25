@@ -8,9 +8,9 @@ on:
     branches: [main]
 
 permissions:
-    contents: write
-    packages: write
-     
+  contents: write
+  packages: write
+
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -43,8 +43,8 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-    #   - name: Run clippy
-    #     run: cargo clippy --all-targets --all-features -- -D warnings
+      #   - name: Run clippy
+      #     run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Build
         run: cargo build --verbose --release
@@ -52,7 +52,9 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
-      - run: tar -cvzf ./aws-auth_${{ runner.os }}_${{ runner.arch }}.tar.gz -C target/release aws-auth
+      - run: |
+          ARTIFACT_NAME=$(echo 'aws-auth_${{ runner.os }}_${{ runner.arch }}' | tr '[:upper:]' '[:lower:]')
+          tar -cvzf "./${ARTIFACT_NAME}.tar.gz" -C target/release aws-auth
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
