@@ -61,7 +61,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         );
     }
 
-    let sso_config = if exec_inputs.update {
+    let sso_config = if exec_inputs.update && config_dir_exists {
         let mut sso_config = AwsSsoConfig::load_config(&config_file)
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
         if exec_inputs.sso_start_url.is_some() {
