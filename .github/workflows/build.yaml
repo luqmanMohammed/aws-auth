@@ -52,11 +52,13 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
+      - run: tar -cvzf ./aws-auth_${{ runner.os }}_${{ runner.arch }}.tar.gz -C target/release/aws-auth
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.os }}
-          path: target/release/aws-auth
+          path: ./aws-auth_${{ runner.os }}_${{ runner.arch }}.tar.gz
           retention-days: 7
 
   release:
@@ -74,16 +76,11 @@ jobs:
         with:
           path: artifacts/
 
-      - name: Create release archives
-        run: |
-          cd artifacts/
-          ls -al
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            *.tar.gz
+            artifacts/build-*/*.tar.gz
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
