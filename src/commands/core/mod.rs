@@ -89,7 +89,7 @@ pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
                 credentials,
                 ExecEvalInputs {
                     region: Region::new(common_args.region.clone()),
-                    output
+                    output,
                 },
             );
         }

@@ -288,7 +288,7 @@ pub enum CoreCommands {
 
         /// Output format
         #[arg(long, short=ARG_SHORT_EVAL_OUTPUT, default_value_t=EvalOutputFormat::Eval)]
-        output: EvalOutputFormat
+        output: EvalOutputFormat,
     },
 
     /// Execute a command with AWS credentials
