@@ -31,6 +31,11 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
     let config_dir_exists = config_dir.exists();
     let config_file = config_dir.join("config.json");
 
+    if config_dir_exists && !(exec_inputs.recreate && exec_inputs.update) {
+        println!("INFO: Config dir exists at {config_dir:?}. No update flags are provided. Assuming dry-run and exiting with success");
+        return Ok(());
+    }
+
     if exec_inputs.update && exec_inputs.recreate {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
