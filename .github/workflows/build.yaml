@@ -52,15 +52,15 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
-      - run: |
-          ARTIFACT_NAME=$(echo 'aws-auth_${{ runner.os }}_${{ runner.arch }}' | tr '[:upper:]' '[:lower:]')
-          tar -cvzf "./${ARTIFACT_NAME}.tar.gz" -C target/release aws-auth
+      - run: echo "ARTIFACT_NAME=$(echo 'aws-auth_${{ runner.os }}_${{ runner.arch }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV" 
+
+      - run: tar -cvzf "./${{ env.ARTIFACT_NAME }}.tar.gz" -C target/release aws-auth
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.os }}
-          path: ./aws-auth_${{ runner.os }}_${{ runner.arch }}.tar.gz
+          path: ./${{ env.ARTIFACT_NAME }}.tar.gz
           retention-days: 7
 
   release:
