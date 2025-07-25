@@ -52,7 +52,7 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
-      - run: tar -cvzf ./aws-auth_${{ runner.os }}_${{ runner.arch }}.tar.gz -c target/release/aws-auth
+      - run: tar -cvzf ./aws-auth_${{ runner.os }}_${{ runner.arch }}.tar.gz -C target/release aws-auth
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
