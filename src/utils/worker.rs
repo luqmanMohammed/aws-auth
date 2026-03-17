@@ -41,7 +41,7 @@ pub struct JobResult<J: Job> {
     pub result: Result<J::Output, JobError<J>>,
 }
 
-type AtomicJMReciever<J> = Arc<Mutex<Receiver<JobMessage<J>>>>;
+type SharedJMReceiver<J> = Arc<Mutex<Receiver<JobMessage<J>>>>;
 
 enum JobResultMessage<J: Job> {
     Result {
@@ -55,7 +55,7 @@ enum JobResultMessage<J: Job> {
     Terminated(usize),
 }
 
-type AtomicJRSender<J> = Arc<Sender<JobResultMessage<J>>>;
+type SharedJRSender<J> = Arc<Sender<JobResultMessage<J>>>;
 
 struct Worker<J>
 where
@@ -73,8 +73,8 @@ where
     fn new(
         id: usize,
         debug: bool,
-        receiver: AtomicJMReciever<J>,
-        sender: AtomicJRSender<J>,
+        receiver: SharedJMReceiver<J>,
+        sender: SharedJRSender<J>,
     ) -> Self {
         elog!(debug, "[{id}] Worker initialising");
         let thread_receiver = receiver.clone();
@@ -82,15 +82,16 @@ where
             elog!(debug, "[{id}] Starting work loop");
             loop {
                 let job = {
-                    let reciever_lock = thread_receiver.lock().unwrap();
-                    reciever_lock.recv()
+                    // unwrapping as its safe since nothing in the locked scope can panic poisoning the lock
+                    let receiver_lock = thread_receiver.lock().unwrap();
+                    receiver_lock.recv()
                 };
                 match job {
                     Ok(job_message) => {
                         match job_message {
                             JobMessage::Execute(job) => {
                                 let jid = job.get_job_id().to_string();
-                                elog!(debug, "[{id}] Recieved Job with Id: {jid}",);
+                                elog!(debug, "[{id}] Received Job with Id: {jid}",);
                                 // Job.execute consumes the Job object by taking ownership of it to be UnwindSafe.
                                 // Execute the job, if it panics, catch the panic and continue
                                 match catch_unwind(|| job.execute()) {
@@ -111,7 +112,7 @@ where
                                             "[{id}] Job with id: {jid} panicked with error: {panic_err:?}"
                                         );
 
-                                        let dwn_panic_err = panic_err
+                                        let panic_message = panic_err
                                             .downcast_ref::<&str>()
                                             .map(|s| s.to_string())
                                             .or_else(|| panic_err.downcast_ref::<String>().cloned())
@@ -122,7 +123,7 @@ where
                                         if sender
                                             .send(JobResultMessage::Panicked {
                                                 job_id: jid,
-                                                panic_error: dwn_panic_err,
+                                                panic_error: panic_message,
                                             })
                                             .is_err()
                                         {
@@ -160,8 +161,8 @@ where
     J: Job,
 {
     workers: Vec<Worker<J>>,
-    job_sender: Option<Sender<JobMessage<J>>>,
-    result_reciever: Option<Receiver<JobResultMessage<J>>>,
+    job_sender: Sender<JobMessage<J>>,
+    result_receiver: Receiver<JobResultMessage<J>>,
     debug: bool,
     num_workers: usize,
 }
@@ -176,7 +177,7 @@ where
         let (job_sender, job_receiver) = mpsc::channel();
         let job_receiver = Arc::new(Mutex::new(job_receiver));
 
-        let (result_sender, result_reciever) = mpsc::channel();
+        let (result_sender, result_receiver) = mpsc::channel();
         let result_sender = Arc::new(result_sender);
 
         let mut workers = Vec::with_capacity(num_workers);
@@ -190,8 +191,8 @@ where
         }
         ThreadPool {
             workers,
-            job_sender: Some(job_sender),
-            result_reciever: Some(result_reciever),
+            job_sender,
+            result_receiver,
             debug,
             num_workers,
         }
@@ -199,22 +200,18 @@ where
 
     pub fn execute(&self, job: J) {
         self.job_sender
-            .as_ref()
-            .unwrap()
             .send(JobMessage::Execute(job))
             .expect("execute cannot be called after closing the channel");
     }
 
     pub fn wait(mut self) -> Vec<JobResult<J>> {
-        let job_sender = self.job_sender.as_ref().unwrap();
         for _ in 0..self.num_workers {
-            job_sender.send(JobMessage::Terminate).unwrap();
+            self.job_sender.send(JobMessage::Terminate).unwrap();
         }
-        let result_reciever = self.result_reciever.as_ref().unwrap();
         let mut terminated = 0;
         let mut results = Vec::new();
         while terminated < self.num_workers {
-            match result_reciever.recv().unwrap() {
+            match self.result_receiver.recv().unwrap() {
                 JobResultMessage::Result { job_id, job_result } => {
                     results.push(JobResult::<J> {
                         job_id,
@@ -223,7 +220,10 @@ where
                 }
                 JobResultMessage::Terminated(thread_id) => {
                     terminated += 1;
-                    elog!(self.debug, "[{thread_id}] Work loop Successully terminated")
+                    elog!(
+                        self.debug,
+                        "[{thread_id}] Work loop Successfully terminated"
+                    )
                 }
                 JobResultMessage::Panicked {
                     job_id,
@@ -240,7 +240,7 @@ where
             if let Some(thread) = worker.thread.take() {
                 thread
                     .join()
-                    .expect("panices are handled in thread, should not reach error");
+                    .expect("panics are handled in thread, should not reach error");
                 elog!(self.debug, "[{wid}] Thread stopped", wid = worker.id)
             }
         }
