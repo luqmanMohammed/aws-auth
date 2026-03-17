@@ -64,26 +64,26 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
     let sso_config = if exec_inputs.update && config_dir_exists {
         let mut sso_config = AwsSsoConfig::load_config(&config_file)
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
-        if exec_inputs.sso_start_url.is_some() {
-            sso_config.start_url = exec_inputs.sso_start_url.unwrap();
+        if let Some(start_url) = exec_inputs.sso_start_url {
+            sso_config.start_url = start_url;
         }
-        if exec_inputs.sso_region.is_some() {
-            sso_config.sso_reigon = exec_inputs.sso_region.unwrap();
+        if let Some(sso_region) = exec_inputs.sso_region {
+            sso_config.sso_reigon = sso_region;
         }
-        if exec_inputs.max_attempts.is_some() {
-            sso_config.max_attempts = exec_inputs.max_attempts;
+        if let Some(max_attempts) = exec_inputs.max_attempts {
+            sso_config.max_attempts = Some(max_attempts);
         }
-        if exec_inputs.initial_delay.is_some() {
-            sso_config.initial_delay = exec_inputs.initial_delay;
+        if let Some(initial_delay) = exec_inputs.initial_delay {
+            sso_config.initial_delay = Some(initial_delay);
         }
-        if exec_inputs.retry_interval.is_some() {
-            sso_config.retry_interval = exec_inputs.retry_interval;
+        if let Some(retry_interval) = exec_inputs.retry_interval {
+            sso_config.retry_interval = Some(retry_interval);
         }
-        if exec_inputs.create_token_retry_threshold.is_some() {
-            sso_config.create_token_retry_threshold = exec_inputs.create_token_retry_threshold;
+        if let Some(create_token_retry_threshold) = exec_inputs.create_token_retry_threshold {
+            sso_config.create_token_retry_threshold = Some(create_token_retry_threshold);
         }
-        if exec_inputs.create_token_lock_decay.is_some() {
-            sso_config.create_token_lock_decay = exec_inputs.create_token_lock_decay
+        if let Some(create_token_lock_decay) = exec_inputs.create_token_lock_decay {
+            sso_config.create_token_lock_decay = Some(create_token_lock_decay);
         }
         sso_config
     } else if exec_inputs.sso_start_url.is_some() || exec_inputs.sso_region.is_some() {

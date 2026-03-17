@@ -52,6 +52,10 @@ impl ExecJob {
     }
 }
 
+impl std::panic::UnwindSafe for ExecJob {}
+
+impl std::panic::RefUnwindSafe for ExecJob {}
+
 impl Job for ExecJob {
     type Error = Error;
     type Output = usize;

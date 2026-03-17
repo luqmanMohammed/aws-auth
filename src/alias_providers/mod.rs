@@ -9,8 +9,8 @@ pub type AliasProviderError = io::Error;
 
 pub trait ProvideAliases {
     type Error: std::error::Error;
-    fn get_alias(&self, alias: &str) -> Result<Option<AssumeIdentifier>, Self::Error>;
-    fn list_aliases(&self) -> Result<Vec<[&str; 3]>, Self::Error>;
+    fn get_alias(&self, alias: &str) -> Result<Option<AssumeIdentifier<'_>>, Self::Error>;
+    fn list_aliases(&self) -> Result<Vec<[&'_ str; 3]>, Self::Error>;
     fn load_aliases(&mut self) -> Result<(), Self::Error>;
     fn set_alias(&mut self, alias: &str, account: &str, role: &str) -> Result<(), Self::Error>;
     fn unset_alias(&mut self, alias: &str) -> Result<(), Self::Error>;
@@ -109,7 +109,7 @@ pub mod json_alias_provider {
                 .collect())
         }
 
-        fn get_alias(&self, alias: &str) -> Result<Option<AssumeIdentifier>, Self::Error> {
+        fn get_alias(&self, alias: &str) -> Result<Option<AssumeIdentifier<'_>>, Self::Error> {
             Ok(self.aliases.get(alias).map(|a| AssumeIdentifier {
                 account: &a.account,
                 role: &a.role,

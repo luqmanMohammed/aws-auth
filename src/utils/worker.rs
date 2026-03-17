@@ -110,18 +110,23 @@ where
                                             debug,
                                             "[{id}] Job with id: {jid} panicked with error: {panic_err:?}"
                                         );
-                                        let dwn_panic_err =
-                                            panic_err.downcast_ref::<Box<dyn ToString>>();
-                                        if let Some(dwn_panic_err) = dwn_panic_err {
-                                            if sender
-                                                .send(JobResultMessage::Panicked {
-                                                    job_id: jid,
-                                                    panic_error: dwn_panic_err.to_string(),
-                                                })
-                                                .is_err()
-                                            {
-                                                break;
-                                            }
+
+                                        let dwn_panic_err = panic_err
+                                            .downcast_ref::<&str>()
+                                            .map(|s| s.to_string())
+                                            .or_else(|| panic_err.downcast_ref::<String>().cloned())
+                                            .unwrap_or_else(|| {
+                                                "<unknown panic payload>".to_string()
+                                            });
+
+                                        if sender
+                                            .send(JobResultMessage::Panicked {
+                                                job_id: jid,
+                                                panic_error: dwn_panic_err,
+                                            })
+                                            .is_err()
+                                        {
+                                            break;
                                         }
                                     }
                                 }
