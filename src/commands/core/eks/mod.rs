@@ -18,24 +18,16 @@ pub struct ExecEksInputs<'a> {
     pub expiry: Option<TimeDelta>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Error resolving SSO credentials: {0}")]
     AwsSso(Box<AwsSsoManagerError>),
-    EksRequestSign(sign::Error),
-    Cache(std::io::Error),
-    Serde(serde_json::Error),
-}
-
-impl std::error::Error for Error {}
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::EksRequestSign(err) => writeln!(f, "Eks auth signing error: {}", err),
-            Error::Cache(err) => writeln!(f, "Invalid or missing cache error: {}", err),
-            Error::Serde(err) => writeln!(f, "Invalid credential json: {}", err),
-            Error::AwsSso(err) => writeln!(f, "Error resolving SSO credentials: {}", err),
-        }
-    }
+    #[error("EKS auth signing error: {0}")]
+    EksRequestSign(#[from] sign::Error),
+    #[error("Invalid or missing cache error: {0}")]
+    Cache(#[from] std::io::Error),
+    #[error("Invalid credential json: {0}")]
+    Serde(#[from] serde_json::Error),
 }
 
 impl From<AwsSsoManagerError> for Error {
@@ -71,13 +63,10 @@ where
             &exec_inputs.region,
             exec_inputs.cluster,
             exec_inputs.expiry.as_ref(),
-        )
-        .map_err(Error::EksRequestSign)?;
+        )?;
 
-        let string_creds = serde_json::to_string(&k8s_creds).map_err(Error::Serde)?;
-        cache_manager
-            .cache_credentials(&string_creds)
-            .map_err(Error::Cache)?;
+        let string_creds = serde_json::to_string(&k8s_creds)?;
+        cache_manager.cache_credentials(&string_creds)?;
         string_creds
     };
 

@@ -9,24 +9,14 @@ pub struct ExecExecInputs {
     pub arguments: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Invalid command: {0}")]
     InvalidCommand(String),
+    #[error("Failed to start program: {0}")]
     ProgramSpawnFailed(io::Error),
+    #[error("Program failed during execution: {0}")]
     ProgramExecFailed(io::Error),
-}
-
-impl std::error::Error for Error {}
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::InvalidCommand(err) => writeln!(f, "Invalid command: {}", err),
-            Error::ProgramSpawnFailed(err) => writeln!(f, "Failed to start program: {}", err),
-            Error::ProgramExecFailed(err) => {
-                writeln!(f, "Program failed during execution: {}", err)
-            }
-        }
-    }
 }
 
 pub type Result = std::result::Result<(), Error>;

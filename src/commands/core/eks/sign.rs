@@ -6,22 +6,23 @@ use aws_sigv4::http_request::{
 use aws_sigv4::sign;
 use aws_smithy_runtime_api::client::identity::Identity;
 use base64::{engine::general_purpose::URL_SAFE, Engine};
+use chrono::{DateTime, Utc};
 use chrono::{Duration, Local};
 use http::Request;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 const K8S_AWS_ID_HEADER: &str = "x-k8s-aws-id";
 const TOKEN_PREFIX: &str = "k8s-aws-v1";
 const DEFAULT_EXPIRTY: Duration = Duration::seconds(860);
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    FailedToSign(SigningError),
-    InvalidRequest(http::Error),
+    #[error("Error resolving SSO credentials: {0}")]
+    FailedToSign(#[from] SigningError),
+    #[error("Invalid EKS Auth request parameters: {0}")]
+    InvalidRequest(#[from] http::Error),
 }
-
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_EXEC_CREDENTIALS_KIND: &str = "ExecCredential";
 pub const DEFAULT_EXEC_CREDENTIALS_API_VERSION: &str = "client.authentication.k8s.io/v1beta1";
@@ -43,21 +44,6 @@ pub struct K8sExecCredentials {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
-
-impl std::error::Error for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::FailedToSign(err) => {
-                writeln!(f, "Failed to Sign Request: {}", err)
-            }
-            Error::InvalidRequest(err) => {
-                writeln!(f, "Invalid EKS Auth request parameters: {}", err)
-            }
-        }
-    }
-}
 
 pub fn generate_eks_credentials(
     credentials: &Credentials,
@@ -101,17 +87,12 @@ pub fn generate_eks_credentials(
         &uri,
         vec![(K8S_AWS_ID_HEADER, cluster_name)].into_iter(),
         aws_sigv4::http_request::SignableBody::Bytes(&[]),
-    )
-    .map_err(Error::FailedToSign)?;
+    )?;
 
-    let (signing_instruction, _) = http_request::sign(request, &SigningParams::V4(params))
-        .map_err(Error::FailedToSign)?
-        .into_parts();
+    let (signing_instruction, _) =
+        http_request::sign(request, &SigningParams::V4(params))?.into_parts();
 
-    let mut request = Request::builder()
-        .uri(&uri)
-        .body(())
-        .map_err(Error::InvalidRequest)?;
+    let mut request = Request::builder().uri(&uri).body(())?;
 
     signing_instruction.apply_to_request_http1x(&mut request);
     let encoded_url = URL_SAFE.encode(request.uri().to_string().into_bytes());

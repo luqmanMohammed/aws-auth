@@ -5,31 +5,17 @@ use crate::utils::{
     resolve_config_dir,
 };
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Error loading SSO accounts: {0}")]
     AwsSsoManager(Box<AwsSsoManagerError>),
-    JsonFormatter(serde_json::Error),
+    #[error("Error formatting SSO accounts using json output: {0}")]
+    JsonFormatter(#[from] serde_json::Error),
 }
 
 impl From<AwsSsoManagerError> for Error {
     fn from(value: AwsSsoManagerError) -> Self {
         Self::AwsSsoManager(Box::new(value))
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::AwsSsoManager(error) => write!(f, "Error loading SSO accounts: {error}"),
-            Error::JsonFormatter(error) => {
-                write!(
-                    f,
-                    "Error formatting SSO accounts using json output: {error}"
-                )
-            }
-        }
     }
 }
 

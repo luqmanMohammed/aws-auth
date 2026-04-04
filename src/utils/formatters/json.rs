@@ -1,28 +1,22 @@
 use super::TabularFormatter;
 
-pub struct JsonFormatter<'a, C> {
-    _phantom: std::marker::PhantomData<C>,
+pub struct JsonFormatter<'a> {
     omit_fields: Vec<&'a str>,
     no_headers: bool,
 }
 
-impl<'a, C> JsonFormatter<'a, C>
-where
-    C: std::string::ToString,
-    C: serde::Serialize,
-{
+impl<'a> JsonFormatter<'a> {
     pub fn new(omit_fields: Vec<&'a str>, no_headers: bool) -> Self {
         Self {
-            _phantom: std::marker::PhantomData {},
             omit_fields,
             no_headers,
         }
     }
 }
 
-impl<C> TabularFormatter<C> for JsonFormatter<'_, C>
+impl<C> TabularFormatter<C> for JsonFormatter<'_>
 where
-    C: std::string::ToString,
+    C: std::fmt::Display,
     C: serde::Serialize,
 {
     type Error = serde_json::Error;

@@ -8,32 +8,17 @@ use std::thread;
 
 use crate::utils::worker::Job;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Missing program to execute")]
     MissingProgram,
-    Io(io::Error),
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
+    #[error("Execution failed with code: {0}")]
     ExecutionFailed(i32),
+    #[error("Thread error: {0}")]
     Thread(String),
 }
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Error::Io(err)
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::MissingProgram => write!(f, "Missing program to execute"),
-            Error::Io(err) => write!(f, "I/O error: {}", err),
-            Error::ExecutionFailed(code) => write!(f, "Execution failed with code: {}", code),
-            Error::Thread(err) => write!(f, "Thread error: {}", err),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 #[derive(Debug)]
 pub struct ExecJob {

@@ -6,9 +6,11 @@ use std::{
     time::Duration,
 };
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    InvalidConfig(serde_json::Error),
+    #[error("Invalid config due to missing fields or Invalid Syntax: {0}")]
+    InvalidConfig(#[from] serde_json::Error),
+    #[error("Config file not found at {:?}: {}. Run `aws-auth init --help` to get help initializing config", .0, .1)]
     ConfigNotFound(PathBuf, std::io::Error),
 }
 
@@ -38,26 +40,9 @@ pub struct AwsSsoConfig {
     pub create_token_lock_decay: Option<chrono::Duration>,
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::InvalidConfig(err) => writeln!(
-                f,
-                "Invalid config due to missing fields or Invalid Syntax: {}",
-                err
-            ),
-            Error::ConfigNotFound(path, err) => {
-                writeln!(f, "Config file not found at {:?}: {}. Run `aws-auth init --help` to get help initializing config", path, err)
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
 impl AwsSsoConfig {
     fn load_config_from_reader<R: Read>(reader: R) -> Result<Self> {
-        serde_json::from_reader::<R, AwsSsoConfig>(reader).map_err(Error::InvalidConfig)
+        Ok(serde_json::from_reader::<R, AwsSsoConfig>(reader)?)
     }
 
     pub fn load_config(config_path: &Path) -> Result<Self> {

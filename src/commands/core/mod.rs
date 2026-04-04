@@ -15,30 +15,21 @@ use crate::{
     utils::{resolve_assume_identifier, resolve_config_dir},
 };
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Error resolving assume identifier: {0}")]
     AssumeIdResolver(String),
+    #[error("Error resolving SSO credentials: {0}")]
     AwsSso(Box<AwsSsoManagerError>),
-    CmdExec(exec::Error),
-    CmdEks(eks::Error),
+    #[error("Error executing command: {0}")]
+    CmdExec(#[from] exec::Error),
+    #[error("Error executing EKS command: {0}")]
+    CmdEks(#[from] eks::Error),
 }
 
 impl From<AwsSsoManagerError> for Error {
     fn from(value: AwsSsoManagerError) -> Self {
         Self::AwsSso(Box::new(value))
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::AssumeIdResolver(err) => write!(f, "Error resolving assume identifier: {err}"),
-            Error::AwsSso(err) => write!(f, "Error resolving SSO credentials: {err}"),
-            Error::CmdExec(err) => write!(f, "Error executing command: {err}"),
-            Error::CmdEks(err) => write!(f, "Error executing EKS command: {err}"),
-        }
     }
 }
 
@@ -80,8 +71,7 @@ pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
                     expiry: eks_expiry_seconds.map(|v| Duration::seconds(v as i64)),
                 },
             )
-            .await
-            .map_err(Error::CmdEks)?;
+            .await?;
         }
         CoreCommands::Eval { output, .. } => {
             let credentials = credential_resolver().await?;
@@ -102,8 +92,7 @@ pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
                     arguments: arguments.clone(),
                 },
             )
-            .await
-            .map_err(Error::CmdExec)?;
+            .await?;
         }
     }
     Ok(())

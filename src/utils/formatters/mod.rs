@@ -3,7 +3,7 @@ pub mod text;
 
 pub trait TabularFormatter<C>
 where
-    C: std::string::ToString,
+    C: std::fmt::Display,
 {
     type Error: std::error::Error + 'static;
     fn format<'r, I, O>(&self, headers: &'r [&'r str], rows: O) -> Result<String, Self::Error>

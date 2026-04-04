@@ -206,23 +206,13 @@ pub mod mono_json {
     use std::fs::File;
     use std::path::{Path, PathBuf};
 
-    #[derive(Debug)]
+    #[derive(Debug, thiserror::Error)]
     pub enum Error {
-        SerdeJson(serde_json::Error),
-        CacheNotFound(std::io::Error),
+        #[error("Error parsing cache json: {0}")]
+        SerdeJson(#[from] serde_json::Error),
+        #[error("Cache not found: {0}")]
+        CacheNotFound(#[from] std::io::Error),
     }
-
-    impl std::fmt::Display for Error {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self {
-                Error::SerdeJson(err) => writeln!(f, "Invalid cache json: {}", err),
-                Error::CacheNotFound(err) => writeln!(f, "Cache not found: {}", err),
-            }
-        }
-    }
-
-    impl std::error::Error for Error {}
-
     pub struct MonoJsonCacheManager {
         cache: Cache,
         cache_path: PathBuf,
@@ -241,16 +231,15 @@ pub mod mono_json {
         type Error = Error;
 
         fn load_cache(&mut self) -> Result<(), Self::Error> {
-            let cache_file = File::open(&self.cache_path).map_err(Error::CacheNotFound)?;
-            let cache =
-                serde_json::from_reader::<File, Cache>(cache_file).map_err(Error::SerdeJson)?;
+            let cache_file = File::open(&self.cache_path)?;
+            let cache = serde_json::from_reader::<File, Cache>(cache_file)?;
             self.cache = cache;
             Ok(())
         }
 
         fn commit(&self) -> Result<(), Self::Error> {
-            let cache_file = File::create(&self.cache_path).map_err(Error::CacheNotFound)?;
-            serde_json::to_writer(cache_file, &self.cache).map_err(Error::SerdeJson)?;
+            let cache_file = File::create(&self.cache_path)?;
+            serde_json::to_writer(cache_file, &self.cache)?;
             Ok(())
         }
 

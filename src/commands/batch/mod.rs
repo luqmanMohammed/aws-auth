@@ -19,33 +19,25 @@ use crate::{
     utils::resolve_config_dir,
 };
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    Cache(CacheManagerError),
+    #[error("Cache error: {0}")]
+    Cache(#[from] CacheManagerError),
+    #[error("Error getting credentials from AWS SSO: {0}")]
     AwsSso(Box<AwsSsoManagerError>),
+    #[error("Provide arguments: {0}")]
     MissingRequiredArg(String),
-    AliasProvider(AliasProviderError),
-    Regex(regex::Error),
+    #[error("Error getting alias: {0}")]
+    AliasProvider(#[from] AliasProviderError),
+    #[error("Invalid regex provided: {0}")]
+    Regex(#[from] regex::Error),
+    #[error("Command Input validation failed: {0}")]
     ValidationFailed(String),
 }
 
 impl From<AwsSsoManagerError> for Error {
     fn from(value: AwsSsoManagerError) -> Self {
         Self::AwsSso(Box::new(value))
-    }
-}
-
-impl std::error::Error for Error {}
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Cache(err) => write!(f, "Cache error: {}", err),
-            Error::AwsSso(err) => write!(f, "Error getting credentials from AWS SSO: {}", err),
-            Error::MissingRequiredArg(err) => write!(f, "Provide arguments: {}", err),
-            Error::AliasProvider(err) => write!(f, "Error getting alias: {}", err),
-            Error::Regex(err) => write!(f, "Invalid regex provided: {}", err),
-            Error::ValidationFailed(err) => write!(f, "Command Input validation failed: {}", err),
-        }
     }
 }
 
@@ -68,9 +60,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
     let grouped_possible_assumes: Vec<(String, String)> = if let Some(ref aliases) =
         batch_common.aliases
     {
-        alias_provider
-            .load_aliases()
-            .map_err(Error::AliasProvider)?;
+        alias_provider.load_aliases()?;
         aliases
             .iter()
             .filter_map(|alias| {
@@ -101,7 +91,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                 })
                 .collect::<Vec<_>>()
         } else if let Some(account_name_regex) = &batch_common.account_filter_regex {
-            let regex = Regex::new(&format!("^{}", account_name_regex)).map_err(Error::Regex)?;
+            let regex = Regex::new(&format!("^{}", account_name_regex))?;
 
             sso_manager
                 .list_accounts(batch_common.ignore_cache)
@@ -158,7 +148,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
         }
     }
 
-    cache_manager.commit().map_err(Error::Cache)?;
+    cache_manager.commit()?;
 
     match subcommand {
         Batch::Exec {

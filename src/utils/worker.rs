@@ -5,6 +5,7 @@ use std::panic::UnwindSafe;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use thiserror::Error;
 
 pub trait Job: Send + UnwindSafe + 'static {
     type Error: std::error::Error + Send + 'static;
@@ -19,19 +20,12 @@ enum JobMessage<J: Job> {
     Terminate,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum JobError<J: Job> {
+    #[error("job failed with a safe error: {0}")]
     Error(J::Error),
+    #[error("job panicked with error: {0}")]
     Panicked(String),
-}
-
-impl<J: Job> std::fmt::Display for JobError<J> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            JobError::Error(err) => write!(f, "Job failed with safe error: {err}"),
-            JobError::Panicked(err) => write!(f, "Job panicked with error: {err}"),
-        }
-    }
 }
 
 #[allow(dead_code)]

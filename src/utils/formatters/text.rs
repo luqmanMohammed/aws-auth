@@ -2,32 +2,25 @@ use std::collections::HashMap;
 
 use super::TabularFormatter;
 
-pub struct TextFormatter<'a, C> {
-    _phantom: std::marker::PhantomData<C>,
+pub struct TextFormatter<'a> {
     omit_fields: Vec<&'a str>,
     no_headers: bool,
-    seperator: &'a str,
+    separator: &'a str,
 }
 
-impl<'a, C> TextFormatter<'a, C>
-where
-    C: std::string::ToString,
-    C: serde::Serialize,
-{
-    pub fn new(omit_fields: Vec<&'a str>, no_headers: bool, seperator: &'a str) -> Self {
+impl<'a> TextFormatter<'a> {
+    pub fn new(omit_fields: Vec<&'a str>, no_headers: bool, separator: &'a str) -> Self {
         Self {
-            _phantom: std::marker::PhantomData {},
             omit_fields,
             no_headers,
-            seperator,
+            separator,
         }
     }
 }
 
-impl<C> TabularFormatter<C> for TextFormatter<'_, C>
+impl<C> TabularFormatter<C> for TextFormatter<'_>
 where
-    C: std::string::ToString,
-    C: std::fmt::Debug,
+    C: std::fmt::Display,
 {
     type Error = std::io::Error;
     fn format<'r, I, O>(&self, headers: &'r [&'r str], rows: O) -> Result<String, Self::Error>
@@ -45,7 +38,7 @@ where
             .filter(|v| !self.omit_fields.contains(v))
             .collect::<Vec<_>>();
 
-        let vrows: Vec<Vec<C>> = rows.into_iter().map(Vec::from_iter).collect();
+        let vrows: Vec<Vec<C>> = rows.into_iter().map(|r| r.into_iter().collect()).collect();
 
         let field_longest: HashMap<&str, usize> = filtered_headers
             .iter()
@@ -68,12 +61,12 @@ where
                 output.push_str("\x1b[0m");
                 if i != filtered_headers.len() - 1 {
                     output.push_str(&" ".repeat(h_padding));
-                    output.push_str(self.seperator);
+                    output.push_str(self.separator);
                 }
             }
             if !filtered_headers.is_empty() {
                 let field_max_sum: usize = field_longest.values().sum::<usize>()
-                    + (filtered_headers.len() - 1) * self.seperator.len();
+                    + (filtered_headers.len() - 1) * self.separator.len();
                 output.push('\n');
                 output.push_str(&"-".repeat(field_max_sum));
                 output.push('\n');
@@ -81,15 +74,14 @@ where
         }
 
         'outer: for (ri, row) in vrows.iter().enumerate() {
-            let vrow = row.iter().collect::<Vec<&C>>();
             for (i, header) in filtered_headers.iter().enumerate() {
                 let h_index = *header_i.get(*header).unwrap();
-                let field = &vrow[h_index].to_string();
-                output.push_str(field);
+                let field = row.get(h_index).map(|v| v.to_string()).unwrap_or_default();
+                output.push_str(&field);
                 if i != filtered_headers.len() - 1 {
                     let f_padding = *field_longest.get(*header).unwrap() - field.len();
                     output.push_str(&" ".repeat(f_padding));
-                    output.push_str(self.seperator);
+                    output.push_str(self.separator);
                 } else if ri == vrows.len() - 1 {
                     break 'outer;
                 } else {
