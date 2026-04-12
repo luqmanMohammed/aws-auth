@@ -2,6 +2,7 @@ pub mod elog;
 pub mod formatters;
 pub mod lock;
 pub mod worker;
+pub mod toolmanager;
 
 use crate::alias_providers::ProvideAliases;
 use crate::cmd::{AssumeInput, CommonArgs};

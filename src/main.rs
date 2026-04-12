@@ -6,6 +6,7 @@ mod cmd;
 mod commands;
 mod common;
 mod utils;
+mod ssm;
 
 use clap::Parser;
 use cmd::{Cli, Commands};
@@ -15,6 +16,7 @@ use commands::{
     core::exec_core_commands,
     init::{self, ExecInitInputs},
     logout::exec_logout,
+    ssm::exec_ssm,
     sso::exec_sso,
     unlock::exec_unlock,
 };
@@ -61,6 +63,7 @@ async fn main() -> Result<(), String> {
             .map_err(error_to_string)?,
         Commands::Alias { subcommand } => exec_alias(subcommand).map_err(error_to_string)?,
         Commands::Sso { subcommand } => exec_sso(subcommand).await.map_err(error_to_string)?,
+        Commands::Ssm { subcommand } => exec_ssm(subcommand).await.map_err(error_to_string)?,
         Commands::Batch { subcommand } => exec_batch(subcommand).await.map_err(error_to_string)?,
         Commands::Unlock { config_dir } => {
             exec_unlock(config_dir.as_deref()).map_err(error_to_string)?

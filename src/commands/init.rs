@@ -4,7 +4,7 @@ use std::fs::File;
 use std::path::PathBuf;
 
 // Directories relative to the config directory
-const RELATIVE_DIRS: [&str; 1] = ["eks"];
+const RELATIVE_DIRS: [&str; 2] = ["eks", "bin"];
 
 pub struct ExecInitInputs {
     pub config_dir: Option<PathBuf>,

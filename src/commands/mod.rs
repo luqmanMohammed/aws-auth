@@ -5,3 +5,4 @@ pub mod init;
 pub mod logout;
 pub mod sso;
 pub mod unlock;
+pub mod ssm;

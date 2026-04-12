@@ -1,5 +1,5 @@
 use clap::{Args, Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// AWS-Auth: A CLI tool for AWS authentication and credential management
 ///
@@ -23,6 +23,9 @@ const ARG_SHORT_REGION: char = 'R';
 // EKS-specific argument short flag
 const ARG_SHORT_CLUSTER: char = 'c';
 const ARG_SHORT_EVAL_OUTPUT: char = 'O';
+// SSH-specific argument short flag
+const ARG_SHORT_INSTANCE_ID: char = 'I';
+const ARG_SHORT_HOST_PROFILE: char = 'P';
 
 /// Defines output format options for command results
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -215,6 +218,14 @@ pub enum Commands {
     Sso {
         #[clap(subcommand)]
         subcommand: Sso,
+    },
+
+    /// Connect to EC2 instances using AWS SSM Session Manager
+    /// 
+    /// Provides commands to connect to EC2 instances, start port forwarding sessions, and manage host profiles for SSM connections.
+    Ssm {
+        #[clap(subcommand)]
+        subcommand: Ssm,
     },
 
     /// Execute operations across multiple AWS accounts
@@ -447,6 +458,154 @@ pub enum Sso {
         #[clap(flatten)]
         formatting: FormatCommonArgs,
     },
+}
+
+#[derive(Args, Clone)]
+#[group(required = true, multiple = true)]
+pub struct SsmInput {
+    /// EC2 instance ID (overrides host profile value)
+    #[arg(short = ARG_SHORT_INSTANCE_ID, long)]
+    pub instance_id: Option<String>,
+
+    /// AWS Account ID (overrides host profile value)
+    #[arg(short = ARG_SHORT_ACCOUNT, long, requires = "role", conflicts_with = "alias", value_parser = validate_account_id)]
+    pub account: Option<String>,
+
+    /// AWS IAM Role (overrides host profile value)
+    #[arg(short = ARG_SHORT_ROLE, long, requires = "account", conflicts_with = "alias")]
+    pub role: Option<String>,
+
+    /// Alias for account/role (overrides host profile value)
+    #[arg(short = ARG_SHORT_ALIAS, long, conflicts_with = "account", conflicts_with = "role")]
+    pub alias: Option<String>,
+
+    /// Saved host profile used as base, any other flag overrides it
+    #[arg(short = ARG_SHORT_HOST_PROFILE, long)]
+    pub host: Option<String>,
+}
+
+#[derive(Args, Clone)]
+pub struct SsmCommonArgs {
+    #[clap(flatten)]
+    pub input: SsmInput,
+
+    /// AWS region for SSM operations
+    #[arg(short = ARG_SHORT_REGION, long, default_value_t = String::from("eu-west-2"))]
+    pub region: String,
+
+    /// Custom directory for storing SSO authentication tokens
+    #[arg(long)]
+    pub sso_cache_dir: Option<PathBuf>,
+
+    /// Custom directory for AWS Auth configuration
+    #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
+    pub config_dir: Option<PathBuf>,
+
+    /// Force new credential retrieval instead of using cached credentials
+    #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
+    pub ignore_cache: bool,
+
+    /// Force refresh of the STS token even if current token is valid
+    #[arg(short = ARG_SHORT_REFRESH_STS_TOKEN, long, default_value_t = false)]
+    pub refresh_sts_token: bool,
+}
+
+#[derive(Args)]
+pub struct SsmHostCommonArgs {
+    /// Custom directory for AWS Auth configuration
+    #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
+    pub config_dir: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+pub enum Ssm {
+    /// Connect to an EC2 instance using AWS SSM Session Manager
+    Connect {
+        #[clap(flatten)]
+        common: SsmCommonArgs,
+    },
+
+    /// Start a port forwarding session to an EC2 instance using AWS SSM Session Manager
+    PortForward {
+        #[clap(flatten)]
+        common: SsmCommonArgs,
+
+        /// Remote port to forward to (overrides host profile value)
+        #[arg(long)]
+        remote_port: Option<u16>,
+
+        /// Local port to forward from (overrides host profile value)
+        #[arg(long)]
+        local_port: Option<u16>,
+    },
+
+    /// Save a host profile for SSM connections
+    SaveHost {
+        #[clap(flatten)]
+        host_common: SsmHostCommonArgs,
+
+        /// Profile name
+        name: String,
+
+        /// EC2 instance ID associated with this host profile
+        #[arg(short = ARG_SHORT_INSTANCE_ID, long)]
+        instance_id: Option<String>,
+
+        /// AWS Account ID associated with this host profile (12 digits)
+        #[arg(short = ARG_SHORT_ACCOUNT, long, requires = "role", conflicts_with = "alias", value_parser = validate_account_id)]
+        account: Option<String>,
+
+        /// AWS IAM Role associated with this host profile
+        #[arg(short = ARG_SHORT_ROLE, long, requires = "account", conflicts_with = "alias")]
+        role: Option<String>,
+
+        /// Alias for account/role associated with this host profile
+        #[arg(short = ARG_SHORT_ALIAS, long, conflicts_with = "account", conflicts_with = "role")]
+        alias: Option<String>,
+
+        /// AWS region for this host profile
+        #[arg(short = ARG_SHORT_REGION, long)]
+        region: Option<String>,
+
+        /// Default remote port for port forwarding when connecting to this host
+        #[arg(long, short = 'M')]
+        default_remote_port: Option<u16>,
+
+        /// Default local port for port forwarding when connecting to this host
+        #[arg(long, short = 'L')]
+        default_local_port: Option<u16>,
+
+        /// Overwrite existing host profile with the same name if it exists
+        #[arg(short = 'w', long, default_value_t = false)]
+        overwrite: bool,
+    },
+
+    /// Remove a saved host profile
+    RemoveHost {
+        #[clap(flatten)]
+        host_common: SsmHostCommonArgs,
+        /// Profile to remove
+        name: String,
+    },
+
+    /// List saved host profiles
+    ListHosts {
+        #[clap(flatten)]
+        host_common: SsmHostCommonArgs,
+        #[clap(flatten)]
+        formatting: FormatCommonArgs,
+    },
+}
+
+impl Ssm {
+    pub fn config_dir(&self) -> Option<&Path> {
+        match self {
+            Ssm::Connect { common } | Ssm::PortForward { common, .. } => common.config_dir.as_deref(),
+            Ssm::SaveHost { host_common, .. }
+            | Ssm::RemoveHost { host_common, .. }
+            | Ssm::ListHosts { host_common, .. } => host_common.config_dir.as_deref(),
+        }
+    }
 }
 
 #[derive(Args)]
