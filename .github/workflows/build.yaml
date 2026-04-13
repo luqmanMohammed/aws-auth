@@ -65,7 +65,7 @@ jobs:
         if: matrix.target != ''
         run: |
           file target/${{ matrix.target }}/release/aws-auth
-          file target/${{ matrix.target }}/release/aws-auth | grep -q "statically linked"
+          file target/${{ matrix.target }}/release/aws-auth | grep -qE "statically linked|static-pie linked"
 
       - name: Run tests
         run: cargo test --verbose
