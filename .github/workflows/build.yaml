@@ -10,22 +10,35 @@ permissions:
   packages: write
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build ${{ matrix.artifact }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: ubuntu-24.04
             artifact: aws-auth_linux_x64
+            target: x86_64-unknown-linux-musl
           - os: ubuntu-24.04-arm
             artifact: aws-auth_linux_arm64
+            target: aarch64-unknown-linux-musl
           - os: macos-latest
             artifact: aws-auth_macos_arm64
+            target: ""
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install musl target
+        if: matrix.target != ''
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install musl-tools
+        if: matrix.target != '' && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -36,20 +49,44 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-
+
       - name: Check formatting
         run: cargo fmt --all -- --check
+
       - name: Build
-        run: cargo build --verbose --release
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo build --verbose --release --target ${{ matrix.target }}
+          else
+            cargo build --verbose --release
+          fi
+
+      - name: Verify static linking
+        if: matrix.target != ''
+        run: |
+          file target/${{ matrix.target }}/release/aws-auth
+          file target/${{ matrix.target }}/release/aws-auth | grep -q "statically linked"
+
       - name: Run tests
         run: cargo test --verbose
+
       - name: Package artifact
-        run: tar -cvzf "./${{ matrix.artifact }}.tar.gz" -C target/release aws-auth
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            tar -cvzf "./${{ matrix.artifact }}.tar.gz" \
+              -C target/${{ matrix.target }}/release aws-auth
+          else
+            tar -cvzf "./${{ matrix.artifact }}.tar.gz" \
+              -C target/release aws-auth
+          fi
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.artifact }}
           path: ./${{ matrix.artifact }}.tar.gz
           retention-days: 7
+
   release:
     name: Create Release
     needs: build
@@ -58,10 +95,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
