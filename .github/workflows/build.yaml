@@ -24,6 +24,9 @@ jobs:
           - os: macos-latest
             artifact: aws-auth_macos_arm64
             target: ""
+          - os: windows-latest
+            artifact: aws-auth_windows_x64
+            target: ""
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -60,6 +63,7 @@ jobs:
           else
             cargo build --verbose --release
           fi
+        shell: bash
 
       - name: Verify static linking
         if: matrix.target != ''
@@ -69,8 +73,10 @@ jobs:
 
       - name: Run tests
         run: cargo test --verbose
+        shell: bash
 
-      - name: Package artifact
+      - name: Package artifact (unix)
+        if: runner.os != 'Windows'
         run: |
           if [ -n "${{ matrix.target }}" ]; then
             tar -cvzf "./${{ matrix.artifact }}.tar.gz" \
@@ -80,11 +86,19 @@ jobs:
               -C target/release aws-auth
           fi
 
+      - name: Package artifact (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/release/aws-auth.exe" -DestinationPath "./${{ matrix.artifact }}.zip"
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.artifact }}
-          path: ./${{ matrix.artifact }}.tar.gz
+          path: |
+            ./${{ matrix.artifact }}.tar.gz
+            ./${{ matrix.artifact }}.zip
           retention-days: 7
 
   release:
@@ -106,4 +120,5 @@ jobs:
         with:
           files: |
             artifacts/build-*/*.tar.gz
+            artifacts/build-*/*.zip
           generate_release_notes: true
