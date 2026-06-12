@@ -43,10 +43,7 @@ pub fn exec_eval(credentials: Credentials, exec_inputs: ExecEvalInputs) {
             if let Some(token) = credentials.session_token() {
                 println!("{prefix}AWS_SESSION_TOKEN={quote}{token}{quote}");
             }
-            println!(
-                "{prefix}AWS_REGION={quote}{}{quote}",
-                exec_inputs.region
-            );
+            println!("{prefix}AWS_REGION={quote}{}{quote}", exec_inputs.region);
             println!(
                 "{prefix}AWS_DEFAULT_REGION={quote}{}{quote}",
                 exec_inputs.region
