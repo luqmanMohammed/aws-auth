@@ -27,23 +27,34 @@ pub fn exec_eval(credentials: Credentials, exec_inputs: ExecEvalInputs) {
             println!("{}", output)
         }
         EvalOutputFormat::Eval => {
-            println!("export AWS_ACCESS_KEY_ID='{}'", credentials.access_key_id());
+            #[cfg(windows)]
+            let (prefix, quote) = ("$env:", '"');
+            #[cfg(not(windows))]
+            let (prefix, quote) = ("export ", '\'');
+
             println!(
-                "export AWS_SECRET_ACCESS_KEY='{}'",
+                "{prefix}AWS_ACCESS_KEY_ID={quote}{}{quote}",
+                credentials.access_key_id()
+            );
+            println!(
+                "{prefix}AWS_SECRET_ACCESS_KEY={quote}{}{quote}",
                 credentials.secret_access_key()
             );
-            if credentials.session_token().is_some() {
-                println!(
-                    "export AWS_SESSION_TOKEN='{}'",
-                    credentials.session_token().unwrap_or_default()
-                );
+            if let Some(token) = credentials.session_token() {
+                println!("{prefix}AWS_SESSION_TOKEN={quote}{token}{quote}");
             }
-            println!("export AWS_REGION='{}'", exec_inputs.region);
-            println!("export AWS_DEFAULT_REGION='{}'", exec_inputs.region);
+            println!(
+                "{prefix}AWS_REGION={quote}{}{quote}",
+                exec_inputs.region
+            );
+            println!(
+                "{prefix}AWS_DEFAULT_REGION={quote}{}{quote}",
+                exec_inputs.region
+            );
             if let Some(expiry) = credentials.expiry() {
                 let dt: DateTime<Utc> = expiry.into();
                 println!(
-                    "export AWS_SSO_SESSION_EXPIRATION='{}'",
+                    "{prefix}AWS_SSO_SESSION_EXPIRATION={quote}{}{quote}",
                     dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
                 );
             }
