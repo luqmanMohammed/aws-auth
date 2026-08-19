@@ -24,6 +24,7 @@ pub type Result = std::result::Result<(), Error>;
 #[cfg(unix)]
 fn child_exit_code(status: ExitStatus) -> i32 {
     use std::os::unix::process::ExitStatusExt;
+    // Shells report a signalled child as 128 + signal number; `code()` is None for those.
     status
         .code()
         .unwrap_or_else(|| 128 + status.signal().unwrap_or(0))

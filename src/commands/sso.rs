@@ -1,4 +1,4 @@
-use crate::aws_sso::{AwsSsoManagerError, build_sso_mgr_cached};
+use crate::aws_sso::{AwsSsoManagerError, ConfigError, build_sso_mgr_cached};
 use crate::cmd::Sso;
 use crate::utils::{
     formatters::{TabularFormatter, json::JsonFormatter, text::TextFormatter},
@@ -7,6 +7,8 @@ use crate::utils::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Error loading config: {0}")]
+    Config(#[from] ConfigError),
     #[error("Error loading SSO accounts: {0}")]
     AwsSsoManager(Box<AwsSsoManagerError>),
     #[error("Error formatting SSO accounts using json output: {0}")]
@@ -24,7 +26,7 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
         Sso::ListAccounts { common, formatting } => {
             let config_dir = resolve_config_dir(common.config_dir.as_deref());
             let mut sso_manager =
-                build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref());
+                build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref())?;
 
             let accounts = sso_manager.list_accounts(common.ignore_cache).await?;
 
@@ -65,7 +67,7 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
         } => {
             let config_dir = resolve_config_dir(common.config_dir.as_deref());
             let mut sso_manager =
-                build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref());
+                build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref())?;
 
             let roles = sso_manager
                 .list_account_roles(&account, common.ignore_cache)

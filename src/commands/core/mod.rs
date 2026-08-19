@@ -10,7 +10,7 @@ use exec::ExecExecInputs;
 
 use crate::{
     alias_providers,
-    aws_sso::{AwsSsoManagerError, build_sso_mgr_cached},
+    aws_sso::{AwsSsoManagerError, ConfigError, build_sso_mgr_cached},
     cmd::CoreCommands,
     utils::{resolve_assume_identifier, resolve_config_dir},
 };
@@ -19,6 +19,8 @@ use crate::{
 pub enum Error {
     #[error("Error resolving assume identifier: {0}")]
     AssumeIdResolver(String),
+    #[error("Error loading config: {0}")]
+    Config(#[from] ConfigError),
     #[error("Error resolving SSO credentials: {0}")]
     AwsSso(Box<AwsSsoManagerError>),
     #[error("Error executing command: {0}")]
@@ -36,7 +38,7 @@ impl From<AwsSsoManagerError> for Error {
 pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
     let common_args = command.get_common_args();
     let config_dir = resolve_config_dir(common_args.config_dir.as_deref());
-    let mut sso_manager = build_sso_mgr_cached(&config_dir, common_args.sso_cache_dir.as_deref());
+    let mut sso_manager = build_sso_mgr_cached(&config_dir, common_args.sso_cache_dir.as_deref())?;
     let mut alias_provider = alias_providers::build_alias_provider(&config_dir);
     let assume_identity = resolve_assume_identifier(&mut alias_provider, common_args)
         .map_err(|err| Error::AssumeIdResolver(err.to_string()))?;

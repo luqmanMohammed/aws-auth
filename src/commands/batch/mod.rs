@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::{
     alias_providers::{self, AliasProviderError, ProvideAliases},
     aws_sso::{
-        AwsSsoManagerError, CacheManager, CacheManagerError, build_sso_mgr_manual,
+        AwsSsoManagerError, CacheManager, CacheManagerError, ConfigError, build_sso_mgr_manual,
         cache::ManageCache,
     },
     cmd::Batch,
@@ -23,6 +23,8 @@ use crate::{
 pub enum Error {
     #[error("Cache error: {0}")]
     Cache(#[from] CacheManagerError),
+    #[error("Error loading config: {0}")]
+    Config(#[from] ConfigError),
     #[error("Error getting credentials from AWS SSO: {0}")]
     AwsSso(Box<AwsSsoManagerError>),
     #[error("Provide arguments: {0}")]
@@ -54,7 +56,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
     let cache_dir = batch_common.sso_cache_dir.as_deref().unwrap_or(&config_dir);
     let mut cache_manager = CacheManager::new(cache_dir);
     let mut alias_provider = alias_providers::build_alias_provider(&config_dir);
-    let mut sso_manager = build_sso_mgr_manual(&mut cache_manager, &config_dir);
+    let mut sso_manager = build_sso_mgr_manual(&mut cache_manager, &config_dir)?;
     sso_manager.load_cache(batch_common.ignore_cache);
 
     let grouped_possible_assumes: Vec<(String, String)> = if let Some(ref aliases) =

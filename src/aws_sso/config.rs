@@ -12,6 +12,8 @@ pub enum Error {
     InvalidConfig(#[from] serde_json::Error),
     #[error("Config file not found at {:?}: {}. Run `aws-auth init --help` to get help initializing config", .0, .1)]
     ConfigNotFound(PathBuf, std::io::Error),
+    #[error("Config contains an out of range duration: {0}")]
+    DurationOutOfRange(#[from] chrono::OutOfRangeError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
