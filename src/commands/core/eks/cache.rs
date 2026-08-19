@@ -1,7 +1,9 @@
+use crate::utils::private_fs;
 use aws_config::Region;
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
@@ -67,7 +69,7 @@ impl CacheManager {
     }
 
     pub fn cache_credentials(&self, creds: &str) -> Result<(), std::io::Error> {
-        fs::create_dir_all(&self.cache_dir)?;
-        fs::write(&self.cache_path, creds)
+        private_fs::create_dir_all(&self.cache_dir)?;
+        private_fs::create_file(&self.cache_path)?.write_all(creds.as_bytes())
     }
 }

@@ -200,6 +200,7 @@ pub trait ManageCache {
 pub mod mono_json {
     use crate::aws_sso::cache::Cache;
     use crate::aws_sso::cache::ManageCache;
+    use crate::utils::private_fs;
     use std::fs::File;
     use std::path::{Path, PathBuf};
 
@@ -235,7 +236,7 @@ pub mod mono_json {
         }
 
         fn commit(&self) -> Result<(), Self::Error> {
-            let cache_file = File::create(&self.cache_path)?;
+            let cache_file = private_fs::create_file(&self.cache_path)?;
             serde_json::to_writer(cache_file, &self.cache)?;
             Ok(())
         }

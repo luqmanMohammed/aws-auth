@@ -1,6 +1,7 @@
 pub mod elog;
 pub mod formatters;
 pub mod lock;
+pub mod private_fs;
 pub mod worker;
 
 use crate::alias_providers::ProvideAliases;

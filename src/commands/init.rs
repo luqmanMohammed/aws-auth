@@ -1,4 +1,5 @@
 use crate::aws_sso::config::AwsSsoConfig;
+use crate::utils::private_fs;
 use crate::utils::resolve_config_dir;
 use std::fs::File;
 use std::path::PathBuf;
@@ -97,9 +98,9 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
             );
             std::fs::remove_dir_all(&config_dir)?;
         }
-        std::fs::create_dir_all(&config_dir)?;
+        private_fs::create_dir_all(&config_dir)?;
         for dir in RELATIVE_DIRS {
-            std::fs::create_dir_all(config_dir.join(dir))?;
+            private_fs::create_dir_all(&config_dir.join(dir))?;
         }
         println!(
             "INFO: Successfully created configuration directory at {}",
