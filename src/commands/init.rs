@@ -45,24 +45,6 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         ));
     }
 
-    if !config_dir_exists || exec_inputs.recreate {
-        if config_dir_exists && exec_inputs.recreate {
-            println!(
-                "INFO: Recreating configuration directory at {}",
-                config_dir.display()
-            );
-            std::fs::remove_dir_all(&config_dir)?;
-        }
-        std::fs::create_dir_all(&config_dir)?;
-        for dir in RELATIVE_DIRS {
-            std::fs::create_dir_all(config_dir.join(dir))?;
-        }
-        println!(
-            "INFO: Successfully created configuration directory at {}",
-            config_dir.display()
-        );
-    }
-
     let sso_config = if exec_inputs.update && config_dir_exists {
         let mut sso_config = AwsSsoConfig::load_config(&config_file)
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
@@ -88,10 +70,12 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
             sso_config.create_token_lock_decay = Some(create_token_lock_decay);
         }
         sso_config
-    } else if exec_inputs.sso_start_url.is_some() || exec_inputs.sso_region.is_some() {
+    } else if let (Some(start_url), Some(sso_region)) =
+        (exec_inputs.sso_start_url, exec_inputs.sso_region)
+    {
         AwsSsoConfig {
-            start_url: exec_inputs.sso_start_url.unwrap(),
-            sso_reigon: exec_inputs.sso_region.unwrap(),
+            start_url,
+            sso_reigon: sso_region,
             max_attempts: exec_inputs.max_attempts,
             initial_delay: exec_inputs.initial_delay,
             retry_interval: exec_inputs.retry_interval,
@@ -104,6 +88,24 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
             "--sso-start-url and --sso-region are required when not updating.",
         ))?
     };
+
+    if !config_dir_exists || exec_inputs.recreate {
+        if config_dir_exists && exec_inputs.recreate {
+            println!(
+                "INFO: Recreating configuration directory at {}",
+                config_dir.display()
+            );
+            std::fs::remove_dir_all(&config_dir)?;
+        }
+        std::fs::create_dir_all(&config_dir)?;
+        for dir in RELATIVE_DIRS {
+            std::fs::create_dir_all(config_dir.join(dir))?;
+        }
+        println!(
+            "INFO: Successfully created configuration directory at {}",
+            config_dir.display()
+        );
+    }
 
     let config_file = File::create(&config_file)?;
     serde_json::to_writer_pretty(config_file, &InitConfig { sso_config })
