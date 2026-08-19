@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::utils::lock::DecayingJsonCounterLockProvider;
 use auth::AuthManager;
 use aws_config::Region;
-use cache::{mono_json::MonoJsonCacheManager, CacheRefMut};
+use cache::{CacheRefMut, mono_json::MonoJsonCacheManager};
 use chrono::Duration;
 use config::AwsSsoConfig;
 

@@ -32,10 +32,10 @@ impl CacheManager {
     pub fn new(args: &CacheManagerInputs) -> Self {
         let cache_file_name = format!(
             "eks-{account}-{role}-{region}-{cluster}",
-            account = &args.account_id,
-            role = &args.role,
-            region = &args.region,
-            cluster = &args.cluster
+            account = args.account_id,
+            role = args.role,
+            region = args.region,
+            cluster = args.cluster
         );
 
         let mut cache_path = PathBuf::new();

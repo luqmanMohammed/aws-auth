@@ -11,8 +11,8 @@ use std::sync::Arc;
 use crate::{
     alias_providers::{self, AliasProviderError, ProvideAliases},
     aws_sso::{
-        build_sso_mgr_manual, cache::ManageCache, AwsSsoManagerError, CacheManager,
-        CacheManagerError,
+        AwsSsoManagerError, CacheManager, CacheManagerError, build_sso_mgr_manual,
+        cache::ManageCache,
     },
     cmd::Batch,
     elog,
@@ -135,12 +135,18 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
             .await
         {
             Ok(credentials) => {
-                elog!(batch_common.debug, "Succesffuly resolved credentials for account {account_id} using the {role_name} role");
+                elog!(
+                    batch_common.debug,
+                    "Succesffuly resolved credentials for account {account_id} using the {role_name} role"
+                );
                 credentials_map.insert(account_id.clone(), credentials);
             }
             Err(err) => {
                 if let AwsSsoManagerError::SsoGetRoleCredentials(_) = err {
-                    elog!(batch_common.debug, "Unauthorized to resolve credentials for account {account_id} using the {role_name} role");
+                    elog!(
+                        batch_common.debug,
+                        "Unauthorized to resolve credentials for account {account_id} using the {role_name} role"
+                    );
                 } else {
                     Err(Error::AwsSso(Box::new(err)))?;
                 }

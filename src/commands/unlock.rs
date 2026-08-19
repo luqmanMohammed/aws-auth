@@ -1,5 +1,5 @@
-use crate::aws_sso::config::AwsSsoConfig;
 use crate::aws_sso::DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD;
+use crate::aws_sso::config::AwsSsoConfig;
 use crate::aws_sso::{LockProvider, LockProviderError};
 use crate::utils::lock::CounterLockProvider;
 use crate::utils::resolve_config_dir;

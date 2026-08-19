@@ -65,15 +65,15 @@ impl CounterLockProvider for DecayingJsonCounterLockProvider {
             let file = std::fs::File::open(lock_path)?;
             let mut lock: CounterLock = serde_json::from_reader(file)?;
             let mut save_lock = false;
-            if let Some((ldd, la)) = self.lock_decay_duration.zip(lock.locked_at) {
-                if Utc::now() >= la + ldd {
-                    lock = CounterLock {
-                        threshold: self.threshold,
-                        count: 0,
-                        locked_at: None,
-                    };
-                    save_lock = true;
-                }
+            if let Some((ldd, la)) = self.lock_decay_duration.zip(lock.locked_at)
+                && Utc::now() >= la + ldd
+            {
+                lock = CounterLock {
+                    threshold: self.threshold,
+                    count: 0,
+                    locked_at: None,
+                };
+                save_lock = true;
             }
             lock.threshold = self.threshold;
             self.lock = Some(lock);

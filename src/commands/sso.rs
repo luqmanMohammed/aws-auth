@@ -1,7 +1,7 @@
-use crate::aws_sso::{build_sso_mgr_cached, AwsSsoManagerError};
+use crate::aws_sso::{AwsSsoManagerError, build_sso_mgr_cached};
 use crate::cmd::Sso;
 use crate::utils::{
-    formatters::{json::JsonFormatter, text::TextFormatter, TabularFormatter},
+    formatters::{TabularFormatter, json::JsonFormatter, text::TextFormatter},
     resolve_config_dir,
 };
 

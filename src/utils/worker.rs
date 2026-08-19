@@ -1,7 +1,7 @@
 use crate::elog;
 use std::marker::PhantomData;
-use std::panic::catch_unwind;
 use std::panic::UnwindSafe;
+use std::panic::catch_unwind;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;

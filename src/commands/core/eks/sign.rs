@@ -5,7 +5,7 @@ use aws_sigv4::http_request::{
 };
 use aws_sigv4::sign;
 use aws_smithy_runtime_api::client::identity::Identity;
-use base64::{engine::general_purpose::URL_SAFE, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE};
 use chrono::{DateTime, Utc};
 use chrono::{Duration, Local};
 use http::Request;

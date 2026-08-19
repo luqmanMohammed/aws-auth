@@ -10,7 +10,7 @@ use exec::ExecExecInputs;
 
 use crate::{
     alias_providers,
-    aws_sso::{build_sso_mgr_cached, AwsSsoManagerError},
+    aws_sso::{AwsSsoManagerError, build_sso_mgr_cached},
     cmd::CoreCommands,
     utils::{resolve_assume_identifier, resolve_config_dir},
 };

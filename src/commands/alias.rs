@@ -1,7 +1,7 @@
-use crate::alias_providers::{build_alias_provider_and_load, AliasProviderError, ProvideAliases};
+use crate::alias_providers::{AliasProviderError, ProvideAliases, build_alias_provider_and_load};
 use crate::cmd::Alias;
-use crate::utils::formatters::text::TextFormatter;
 use crate::utils::formatters::TabularFormatter;
+use crate::utils::formatters::text::TextFormatter;
 use crate::utils::{self, formatters::json::JsonFormatter};
 
 #[derive(Debug, thiserror::Error)]

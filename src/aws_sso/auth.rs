@@ -3,15 +3,15 @@ use crate::aws_sso::cache::ManageCache;
 use crate::aws_sso::types::ClientInformation;
 use crate::utils::lock::CounterLockProvider;
 use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
+use aws_sdk_sso::Client as SsoClient;
 use aws_sdk_sso::operation::get_role_credentials::GetRoleCredentialsError;
 use aws_sdk_sso::operation::list_account_roles::ListAccountRolesError;
 use aws_sdk_sso::operation::list_accounts::ListAccountsError;
 use aws_sdk_sso::types::{AccountInfo, RoleInfo};
-use aws_sdk_sso::Client as SsoClient;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenError;
 use aws_sdk_ssooidc::operation::register_client::RegisterClientError;
 use aws_sdk_ssooidc::operation::start_device_authorization::StartDeviceAuthorizationError;
-use aws_sdk_ssooidc::{config::Credentials, Client as OidcClient};
+use aws_sdk_ssooidc::{Client as OidcClient, config::Credentials};
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_runtime_api::http::Response;
 use chrono::{DateTime, Duration, Utc};
@@ -45,9 +45,9 @@ pub enum Error<
 }
 
 impl<
-        CE: 'static + std::error::Error + std::fmt::Debug,
-        LE: 'static + std::error::Error + std::fmt::Debug,
-    > std::fmt::Display for Error<CE, LE>
+    CE: 'static + std::error::Error + std::fmt::Debug,
+    LE: 'static + std::error::Error + std::fmt::Debug,
+> std::fmt::Display for Error<CE, LE>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -74,16 +74,19 @@ impl<
             }
             Error::LockProvider(_) => todo!(),
             Error::UpstreamLocked => {
-                writeln!(f, "Maximum retry attempts reached, upstream locked to prevent IP ban by AWS. Use aws-auth unlock to unlock.")
+                writeln!(
+                    f,
+                    "Maximum retry attempts reached, upstream locked to prevent IP ban by AWS. Use aws-auth unlock to unlock."
+                )
             }
         }
     }
 }
 
 impl<
-        CE: 'static + std::error::Error + std::fmt::Debug,
-        LE: 'static + std::error::Error + std::fmt::Debug,
-    > std::error::Error for Error<CE, LE>
+    CE: 'static + std::error::Error + std::fmt::Debug,
+    LE: 'static + std::error::Error + std::fmt::Debug,
+> std::error::Error for Error<CE, LE>
 {
 }
 

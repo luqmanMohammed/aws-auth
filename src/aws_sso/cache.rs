@@ -23,28 +23,28 @@ impl<C: ManageCache> ManageCache for CacheRefMut<'_, C> {
 
     fn load_cache(&mut self) -> Result<(), Self::Error> {
         match self {
-            CacheRefMut::Owned(ref mut c) => c.load_cache(),
+            CacheRefMut::Owned(c) => c.load_cache(),
             CacheRefMut::BorrowedMut(c) => c.load_cache(),
         }
     }
 
     fn commit(&self) -> Result<(), Self::Error> {
         match self {
-            CacheRefMut::Owned(ref c) => c.commit(),
+            CacheRefMut::Owned(c) => c.commit(),
             CacheRefMut::BorrowedMut(c) => c.commit(),
         }
     }
 
     fn get_cache_as_ref(&self) -> &Cache {
         match self {
-            CacheRefMut::Owned(ref c) => c.get_cache_as_ref(),
+            CacheRefMut::Owned(c) => c.get_cache_as_ref(),
             CacheRefMut::BorrowedMut(c) => c.get_cache_as_ref(),
         }
     }
 
     fn get_cache_as_mut(&mut self) -> &mut Cache {
         match self {
-            CacheRefMut::Owned(ref mut c) => c.get_cache_as_mut(),
+            CacheRefMut::Owned(c) => c.get_cache_as_mut(),
             CacheRefMut::BorrowedMut(c) => c.get_cache_as_mut(),
         }
     }
@@ -122,11 +122,8 @@ pub trait ManageCache {
     fn get_session(&self, account_id: &str, role_name: &str) -> Option<&CredentialsWrapper> {
         let cache_key = format!("{}-{}", account_id, role_name);
         let credentials = self.get_cache_as_ref().sessions.get(&cache_key)?;
-        if let Some(expiry) = credentials.expires_after {
-            if Utc::now() > expiry - EXPIRATION_BUFFER {
-                return None;
-            }
-        } else {
+        let expiry = credentials.expires_after?;
+        if Utc::now() > expiry - EXPIRATION_BUFFER {
             return None;
         }
 

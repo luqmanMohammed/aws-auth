@@ -1,4 +1,4 @@
-use crate::aws_sso::{build_sso_mgr_cached, AwsSsoManagerError};
+use crate::aws_sso::{AwsSsoManagerError, build_sso_mgr_cached};
 use crate::utils::resolve_config_dir;
 use std::path::Path;
 
