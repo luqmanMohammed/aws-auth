@@ -1,11 +1,13 @@
-use crate::aws_sso::DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD;
 use crate::aws_sso::config::AwsSsoConfig;
-use crate::aws_sso::{ConfigError, LockProvider, LockProviderError};
+use crate::aws_sso::{
+    CREATE_TOKEN_LOCK_NAME, ConfigError, DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD, LockProvider,
+    LockProviderError,
+};
 use crate::utils::lock::CounterLockProvider;
 use crate::utils::resolve_config_dir;
 use std::path::Path;
 
-const LOCK_NAMES: [&str; 1] = ["aws-sso-create-token-lock"];
+const LOCK_NAMES: [&str; 1] = [CREATE_TOKEN_LOCK_NAME];
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

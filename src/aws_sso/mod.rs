@@ -20,6 +20,7 @@ pub type LockProviderError = std::io::Error;
 pub type AwsSsoManager<'a> = AuthManager<'a, CacheManager, LockProvider>;
 pub type AwsSsoManagerError = auth::Error<CacheManagerError, LockProviderError>;
 
+pub const CREATE_TOKEN_LOCK_NAME: &str = "aws-sso-create-token-lock";
 pub const DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD: u64 = 5;
 pub const DEFAULT_CREATE_TOKEN_LOCK_DECAY: chrono::Duration = chrono::Duration::seconds(2 * 3600);
 
@@ -38,18 +39,18 @@ fn build_aws_sso_manager<'a>(
         None => Some(DEFAULT_CREATE_TOKEN_LOCK_DECAY),
     };
 
-    let lock_provider = config
+    let create_token_retry_threshold = config
         .create_token_retry_threshold
-        .filter(|&threshold| threshold != 0)
-        .or(Some(DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD))
-        .map(|threshold| {
-            LockProvider::new(
-                config_dir,
-                "aws-sso-create-token-lock",
-                threshold,
-                create_token_lock_decay,
-            )
-        });
+        .unwrap_or(DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD);
+
+    let lock_provider = (create_token_retry_threshold != 0).then(|| {
+        LockProvider::new(
+            config_dir,
+            CREATE_TOKEN_LOCK_NAME,
+            create_token_retry_threshold,
+            create_token_lock_decay,
+        )
+    });
 
     Ok(AwsSsoManager::new(
         cache_manager,

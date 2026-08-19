@@ -72,7 +72,7 @@ impl<
             Error::OidcListAccountRoles(err) => {
                 writeln!(f, "Oidc List Account Roles Error: {}", err)
             }
-            Error::LockProvider(_) => todo!(),
+            Error::LockProvider(err) => writeln!(f, "Lock Provider Error: {}", err),
             Error::UpstreamLocked => {
                 writeln!(
                     f,
