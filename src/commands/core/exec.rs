@@ -2,7 +2,7 @@ use aws_config::Region;
 use aws_sdk_sso::config::Credentials;
 use std::collections::HashMap;
 use std::io;
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 
 pub struct ExecExecInputs {
     pub region: Region,
@@ -15,11 +15,24 @@ pub enum Error {
     InvalidCommand(String),
     #[error("Failed to start program: {0}")]
     ProgramSpawnFailed(io::Error),
-    #[error("Program failed during execution: {0}")]
-    ProgramExecFailed(io::Error),
+    #[error("Failed to wait for program: {0}")]
+    ProgramWaitFailed(io::Error),
 }
 
 pub type Result = std::result::Result<(), Error>;
+
+#[cfg(unix)]
+fn child_exit_code(status: ExitStatus) -> i32 {
+    use std::os::unix::process::ExitStatusExt;
+    status
+        .code()
+        .unwrap_or_else(|| 128 + status.signal().unwrap_or(0))
+}
+
+#[cfg(not(unix))]
+fn child_exit_code(status: ExitStatus) -> i32 {
+    status.code().unwrap_or(1)
+}
 
 pub async fn exec_exec(credentials: Credentials, exec_inputs: ExecExecInputs) -> Result {
     let program = exec_inputs
@@ -48,7 +61,7 @@ pub async fn exec_exec(credentials: Credentials, exec_inputs: ExecExecInputs) ->
         .spawn()
         .map_err(Error::ProgramSpawnFailed)?;
 
-    child.wait().map_err(Error::ProgramExecFailed)?;
+    let status = child.wait().map_err(Error::ProgramWaitFailed)?;
 
-    Ok(())
+    std::process::exit(child_exit_code(status))
 }
