@@ -33,7 +33,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
     let config_file = config_dir.join("config.json");
 
     if config_dir_exists && !(exec_inputs.recreate || exec_inputs.update) {
-        println!(
+        eprintln!(
             "INFO: Config dir exists at {config_dir:?}. No update flags are provided. Assuming dry-run and exiting with success"
         );
         return Ok(());
@@ -92,7 +92,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
 
     if !config_dir_exists || exec_inputs.recreate {
         if config_dir_exists && exec_inputs.recreate {
-            println!(
+            eprintln!(
                 "INFO: Recreating configuration directory at {}",
                 config_dir.display()
             );
@@ -102,7 +102,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         for dir in RELATIVE_DIRS {
             private_fs::create_dir_all(&config_dir.join(dir))?;
         }
-        println!(
+        eprintln!(
             "INFO: Successfully created configuration directory at {}",
             config_dir.display()
         );
@@ -111,7 +111,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
     let config_file = File::create(&config_file)?;
     serde_json::to_writer_pretty(config_file, &InitConfig { sso_config })
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
-    println!(
+    eprintln!(
         "INFO: Successfully initialized/updated configuration in {}",
         config_dir.display()
     );

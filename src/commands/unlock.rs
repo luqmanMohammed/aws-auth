@@ -33,7 +33,7 @@ pub fn exec_unlock(config_dir: Option<&Path>) -> Result<(), Error> {
         );
         if let Err(err) = lock_provider.load_lock() {
             if err.kind() == std::io::ErrorKind::NotFound {
-                println!("INFO: Locking is not enabled.");
+                eprintln!("INFO: Locking is not enabled.");
                 continue;
             } else {
                 return Err(Error::Lock(err));
@@ -42,9 +42,9 @@ pub fn exec_unlock(config_dir: Option<&Path>) -> Result<(), Error> {
         if lock_provider.get_lock().is_locked() {
             lock_provider.get_lock_mut().reset();
             lock_provider.save_lock()?;
-            println!("INFO: Lock has been reset.");
+            eprintln!("INFO: Lock has been reset.");
         } else {
-            println!("INFO: Lock is not set.");
+            eprintln!("INFO: Lock is not set.");
         }
     }
 
