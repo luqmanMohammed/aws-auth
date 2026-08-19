@@ -236,8 +236,8 @@ pub mod mono_json {
         }
 
         fn commit(&self) -> Result<(), Self::Error> {
-            let cache_file = private_fs::create_file(&self.cache_path)?;
-            serde_json::to_writer(cache_file, &self.cache)?;
+            let cache = serde_json::to_vec(&self.cache)?;
+            private_fs::write_atomic(&self.cache_path, &cache)?;
             Ok(())
         }
 
