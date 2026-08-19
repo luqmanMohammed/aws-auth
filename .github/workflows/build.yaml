@@ -29,7 +29,7 @@ jobs:
             target: ""
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -43,7 +43,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -93,7 +93,7 @@ jobs:
           Compress-Archive -Path "target/release/aws-auth.exe" -DestinationPath "./${{ matrix.artifact }}.zip"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-${{ matrix.artifact }}
           path: |
@@ -108,15 +108,15 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             artifacts/build-*/*.tar.gz
