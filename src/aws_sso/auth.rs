@@ -185,11 +185,15 @@ where
             self.cache_manager.clear_sessions();
         }
         let result = resolver(self).await;
-        if result.is_ok() {
-            self.cache_manager.set_client_info(self.client_info.clone());
-            if self.handle_cache {
-                self.cache_manager.commit().map_err(Error::Cache)?;
+        self.cache_manager.set_client_info(self.client_info.clone());
+        if self.handle_cache
+            && let Err(err) = self.cache_manager.commit()
+        {
+            if result.is_ok() {
+                return Err(Error::Cache(err));
             }
+            // Reported rather than returned so it cannot mask why the resolver failed.
+            eprintln!("WARN: Failed to persist SSO cache: {}", err);
         }
         result
     }
