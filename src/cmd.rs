@@ -110,6 +110,8 @@ pub struct CommonArgs {
     pub config_dir: Option<PathBuf>,
 
     /// Force new credential retrieval instead of using cached credentials
+    /// Discards the SSO client registration too, so this starts a new device
+    /// authorization rather than only refetching role credentials
     /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
@@ -412,6 +414,8 @@ pub struct SsoCommonArgs {
     pub config_dir: Option<PathBuf>,
 
     /// Force new credential retrieval instead of using cached credentials
+    /// Discards the SSO client registration too, so this starts a new device
+    /// authorization rather than only refetching role credentials
     /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
@@ -491,6 +495,8 @@ pub struct BatchCommonArgs {
     pub config_dir: Option<PathBuf>,
 
     /// Force new credential retrieval instead of using cached credentials
+    /// Discards the SSO client registration too, so this starts a new device
+    /// authorization rather than only refetching role credentials
     /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,

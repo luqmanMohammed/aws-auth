@@ -54,7 +54,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
             sso_config.start_url = start_url;
         }
         if let Some(sso_region) = exec_inputs.sso_region {
-            sso_config.sso_reigon = sso_region;
+            sso_config.sso_region = sso_region;
         }
         if let Some(max_attempts) = exec_inputs.max_attempts {
             sso_config.max_attempts = Some(max_attempts);
@@ -77,7 +77,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
     {
         AwsSsoConfig {
             start_url,
-            sso_reigon: sso_region,
+            sso_region,
             max_attempts: exec_inputs.max_attempts,
             initial_delay: exec_inputs.initial_delay,
             retry_interval: exec_inputs.retry_interval,

@@ -25,7 +25,7 @@ pub struct AwsSsoConfig {
     #[serde(rename = "startURL")]
     pub start_url: String,
     #[serde(rename = "ssoRegion")]
-    pub sso_reigon: String,
+    pub sso_region: String,
     #[serde(rename = "maxAttempts", skip_serializing_if = "Option::is_none")]
     pub max_attempts: Option<usize>,
     #[serde(rename = "initialDelay", skip_serializing_if = "Option::is_none")]

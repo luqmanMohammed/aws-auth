@@ -55,6 +55,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Lint
+        run: cargo clippy --all-targets -- -D warnings
+
       - name: Build
         run: |
           if [ -n "${{ matrix.target }}" ]; then

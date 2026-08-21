@@ -48,10 +48,9 @@ pub async fn exec_exec(credentials: Credentials, exec_inputs: ExecExecInputs) ->
     envs.insert("AWS_DEFAULT_REGION", exec_inputs.region.as_ref());
     envs.insert("AWS_ACCESS_KEY_ID", credentials.access_key_id());
     envs.insert("AWS_SECRET_ACCESS_KEY", credentials.secret_access_key());
-    envs.insert(
-        "AWS_SESSION_TOKEN",
-        credentials.session_token().unwrap_or(""),
-    );
+    if let Some(session_token) = credentials.session_token() {
+        envs.insert("AWS_SESSION_TOKEN", session_token);
+    }
 
     let mut child = Command::new(program)
         .args(args)

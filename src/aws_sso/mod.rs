@@ -55,7 +55,7 @@ fn build_aws_sso_manager<'a>(
     Ok(AwsSsoManager::new(
         cache_manager,
         config.start_url,
-        Region::new(config.sso_reigon),
+        Region::new(config.sso_region),
         initial_delay,
         config.max_attempts,
         retry_interval,
