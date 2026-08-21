@@ -456,9 +456,9 @@ pub struct BatchCommonArgs {
     #[arg(short = ARG_SHORT_ACCOUNT, long, value_delimiter = ',')]
     pub account_ids: Option<Vec<String>>,
 
-    /// IAM roles to attempt in priority order
+    /// IAM roles to attempt in priority order (comma-separated list)
     /// First successful role will be used for operations
-    #[arg(short = ARG_SHORT_ROLE, long)]
+    #[arg(short = ARG_SHORT_ROLE, long, value_delimiter = ',')]
     pub role_order: Option<Vec<String>>,
 
     /// Target accounts by configured aliases (comma-separated list)
