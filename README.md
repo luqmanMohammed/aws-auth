@@ -201,3 +201,7 @@ cargo test
 ```
 
 Tests are unit tests inside each module and need no network or AWS account.
+
+## Licence
+
+[MIT](LICENSE)
