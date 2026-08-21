@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 const K8S_AWS_ID_HEADER: &str = "x-k8s-aws-id";
 const TOKEN_PREFIX: &str = "k8s-aws-v1";
-const DEFAULT_EXPIRTY: Duration = Duration::seconds(860);
+const DEFAULT_EXPIRY: Duration = Duration::seconds(860);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -51,7 +51,7 @@ pub fn generate_eks_credentials(
     cluster_name: &str,
     expires_in: Option<&Duration>,
 ) -> Result<K8sExecCredentials> {
-    let expires_in = expires_in.unwrap_or(&DEFAULT_EXPIRTY);
+    let expires_in = expires_in.unwrap_or(&DEFAULT_EXPIRY);
     let credential_expiry = credentials
         .expiry()
         .map_or(Utc::now() + *expires_in, |cx_st| {
@@ -64,7 +64,7 @@ pub fn generate_eks_credentials(
         });
 
     let mut settings = SigningSettings::default();
-    settings.expires_in = Some(expires_in.to_std().unwrap());
+    settings.expires_in = Some(expires_in.to_std().unwrap_or_default());
     settings.signature_location = SignatureLocation::QueryParams;
 
     let identity = &Identity::from(credentials.to_owned());

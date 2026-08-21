@@ -52,7 +52,12 @@ where
                 let header_max_len = header.len();
                 let field_max_len = vrows
                     .iter()
-                    .map(|row| row[*header_i.get(*header).unwrap()].to_string().len())
+                    .map(
+                        |row| match header_i.get(*header).and_then(|i| row.get(*i)) {
+                            Some(field) => field.to_string().len(),
+                            None => 0,
+                        },
+                    )
                     .max()
                     .unwrap_or(0);
                 (**header, std::cmp::max(header_max_len, field_max_len))

@@ -271,10 +271,10 @@ pub enum CoreCommands {
         #[arg(long)]
         eks_cache_dir: Option<PathBuf>,
 
-        /// Token expiration time in seconds
-        /// Default: 900 seconds (15 minutes)
-        #[arg(long)]
-        eks_expiry_seconds: Option<usize>,
+        /// Token expiration time in seconds (1 to 604800, the AWS signing maximum)
+        /// Default: 860 seconds
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=604_800))]
+        eks_expiry_seconds: Option<u64>,
     },
 
     /// Output AWS environment variables for credential access

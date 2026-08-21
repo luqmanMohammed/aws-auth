@@ -459,7 +459,7 @@ where
             self.max_attempts.max(attempts.max(0) as usize)
         };
 
-        thread::sleep(self.initial_delay.to_std().unwrap());
+        thread::sleep(self.initial_delay.to_std().unwrap_or_default());
 
         let mut attempts = 0;
         let create_token = loop {
@@ -487,7 +487,7 @@ where
                     break Err(err);
                 }
                 Err(_) => {
-                    thread::sleep(interval.to_std().unwrap());
+                    thread::sleep(interval.to_std().unwrap_or_default());
                     attempts += 1;
                 }
             }
@@ -559,10 +559,11 @@ where
                 .secret_access_key
                 .expect("Should be present, Succesfull GetRoleCredentials assures it"),
             credentials.session_token,
-            Some(
-                UNIX_EPOCH
-                    + std::time::Duration::from_millis(credentials.expiration.try_into().unwrap()),
-            ),
+            // An unreadable expiry leaves the credentials uncacheable rather than ending the
+            // command, since they are still valid for this caller right now.
+            u64::try_from(credentials.expiration)
+                .ok()
+                .map(|millis| UNIX_EPOCH + std::time::Duration::from_millis(millis)),
             "role-credentials",
         ))
     }
