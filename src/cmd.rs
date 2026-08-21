@@ -489,9 +489,9 @@ pub struct BatchCommonArgs {
     #[arg(short = ARG_SHORT_REGION, long, default_value_t=String::from("eu-west-2"))]
     pub region: String,
 
-    /// Number of concurrent operations to perform
+    /// Number of concurrent operations to perform (at least 1)
     /// Default: 1 (sequential processing)
-    #[arg(short = 'p', long, default_value_t = 1)]
+    #[arg(short = 'p', long, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
     pub parallel: usize,
 
     /// Custom directory for storing SSO authentication tokens
