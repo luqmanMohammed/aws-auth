@@ -51,6 +51,7 @@ async fn run() -> Result<(), String> {
             create_token_retry_threshold,
             create_token_lock_decay_seconds,
             update,
+            no_browser,
         } => {
             init::exec_init(ExecInitInputs {
                 config_dir,
@@ -64,6 +65,7 @@ async fn run() -> Result<(), String> {
                     .map(|s| chrono::Duration::seconds(s as i64)),
                 create_token_retry_threshold,
                 update,
+                no_browser,
             })
             .map_err(error_to_string)?;
         }

@@ -137,6 +137,7 @@ where
     client_info: ClientInformation,
     code_writer: Box<dyn std::io::Write + 'static>,
     handle_cache: bool,
+    no_browser: bool,
     access_token_reacquired: bool,
 }
 
@@ -157,6 +158,7 @@ where
         retry_interval: Option<Duration>,
         code_writer: Option<Box<dyn std::io::Write + 'static>>,
         handle_cache: bool,
+        no_browser: bool,
         upstream_lock: Option<L>,
     ) -> Self {
         let sdk_config = SdkConfig::builder()
@@ -181,6 +183,7 @@ where
                 None => Box::new(std::io::stderr()),
             },
             handle_cache,
+            no_browser,
             upstream_lock,
             access_token_reacquired: false,
         }
@@ -435,12 +438,9 @@ where
         );
 
         let _ = writeln!(self.code_writer, "Verification URL: {verification_uri}");
-        let browser_opened = webbrowser::open(verification_uri).is_ok();
+        let browser_opened = !self.no_browser && webbrowser::open(verification_uri).is_ok();
         if !browser_opened {
-            let _ = writeln!(
-                self.code_writer,
-                "Could not open a browser. Open the verification URL to continue."
-            );
+            let _ = writeln!(self.code_writer, "Open the verification URL to continue.");
         }
 
         let device_interval = Duration::seconds(device_auth.interval as i64);

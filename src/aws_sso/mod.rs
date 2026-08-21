@@ -61,6 +61,7 @@ fn build_aws_sso_manager<'a>(
         retry_interval,
         None,
         handle_cache,
+        config.no_browser.unwrap_or(false),
         lock_provider,
     ))
 }

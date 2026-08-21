@@ -42,6 +42,8 @@ pub struct AwsSsoConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub create_token_lock_decay: Option<chrono::Duration>,
+    #[serde(rename = "noBrowser", skip_serializing_if = "Option::is_none")]
+    pub no_browser: Option<bool>,
 }
 
 impl AwsSsoConfig {

@@ -202,6 +202,11 @@ pub enum Commands {
         /// Default: 7200 (2 hour)
         #[arg(short = 'D', long)]
         create_token_lock_decay_seconds: Option<u64>,
+
+        /// Never try to open a browser during device authorization
+        /// Prints the verification URL instead, for hosts with no browser of their own
+        #[arg(long)]
+        no_browser: Option<bool>,
     },
 
     #[clap(flatten)]

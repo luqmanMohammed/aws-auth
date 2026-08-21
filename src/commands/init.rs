@@ -19,6 +19,7 @@ pub struct ExecInitInputs {
     pub retry_interval: Option<std::time::Duration>,
     pub create_token_retry_threshold: Option<u64>,
     pub create_token_lock_decay: Option<chrono::Duration>,
+    pub no_browser: Option<bool>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -71,6 +72,9 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         if let Some(create_token_lock_decay) = exec_inputs.create_token_lock_decay {
             sso_config.create_token_lock_decay = Some(create_token_lock_decay);
         }
+        if let Some(no_browser) = exec_inputs.no_browser {
+            sso_config.no_browser = Some(no_browser);
+        }
         sso_config
     } else if let (Some(start_url), Some(sso_region)) =
         (exec_inputs.sso_start_url, exec_inputs.sso_region)
@@ -83,6 +87,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
             retry_interval: exec_inputs.retry_interval,
             create_token_retry_threshold: exec_inputs.create_token_retry_threshold,
             create_token_lock_decay: exec_inputs.create_token_lock_decay,
+            no_browser: exec_inputs.no_browser,
         }
     } else {
         Err(std::io::Error::new(
