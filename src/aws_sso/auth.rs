@@ -20,6 +20,7 @@ use std::time::UNIX_EPOCH;
 
 const OIDC_APP_NAME: &str = "aws-auth";
 const OIDC_CLIENT_TYPE: &str = "public";
+const OIDC_SCOPE: &str = "sso:account:access";
 const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_CREATE_TOKEN_INITIAL_DELAY: Duration = Duration::seconds(10);
 const DEFAULT_CREATE_TOKEN_RETRY_INTERVAL: Duration = Duration::seconds(5);
@@ -155,6 +156,26 @@ where
         }
     }
 
+    async fn ensure_access_token(&mut self) -> Result<(), C::Error, L::Error> {
+        if self.client_info.access_token.is_some() {
+            return Ok(());
+        }
+        if self.client_info.refresh_token.is_some() {
+            match self.refresh_access_token().await {
+                Ok(()) => {
+                    self.cache_manager.clear_sessions();
+                    return Ok(());
+                }
+                // The portal session has ended. Keeping the token would dead-end every later run
+                // on the same rejected refresh instead of authorizing again.
+                Err(_) => self.client_info.refresh_token = None,
+            }
+        }
+        self.create_access_token().await?;
+        self.cache_manager.clear_sessions();
+        Ok(())
+    }
+
     async fn prepare_sso_and_resolve<T, F>(
         &mut self,
         resolver: F,
@@ -172,18 +193,21 @@ where
         if self.handle_cache {
             self.load_cache(ignore_cache);
         }
-        if self.client_info.client_id.is_none() || self.client_info.client_secret.is_none() {
+        // Re-registered before any device authorization so a client stored by an older build,
+        // which was registered without a scope and so can never be issued a refresh token, is
+        // replaced instead of being reused until its secret expires months later.
+        let device_authorization_due =
+            self.client_info.access_token.is_none() && self.client_info.refresh_token.is_none();
+        if self.client_info.client_id.is_none()
+            || self.client_info.client_secret.is_none()
+            || device_authorization_due
+        {
             self.register_client().await?;
             self.client_info.access_token = None;
             self.client_info.refresh_token = None;
         }
-        if self.client_info.access_token.is_none() && self.client_info.refresh_token.is_some() {
-            self.refresh_access_token().await?;
-            self.cache_manager.clear_sessions();
-        } else if self.client_info.access_token.is_none() {
-            self.create_access_token().await?;
-            self.cache_manager.clear_sessions();
-        }
+        self.ensure_access_token().await?;
+
         let result = resolver(self).await;
         self.cache_manager.set_client_info(self.client_info.clone());
         if self.handle_cache
@@ -312,6 +336,7 @@ where
             .register_client()
             .client_name(OIDC_APP_NAME)
             .client_type(OIDC_CLIENT_TYPE)
+            .scopes(OIDC_SCOPE)
             .send()
             .await
             .map_err(Error::OidcRegisterClient)?;

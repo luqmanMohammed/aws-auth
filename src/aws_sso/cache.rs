@@ -169,23 +169,22 @@ pub trait ManageCache {
         let mut ninfo = ClientInformation::default();
         let cinfo = self.get_cache_as_ref().client_info.clone();
 
-        if self.get_client_credentials().is_some() {
-            ninfo.client_id = cinfo.client_id;
-            ninfo.client_secret = cinfo.client_secret;
-            ninfo.client_secret_expires_at = cinfo.client_secret_expires_at;
-        } else {
+        if self.get_client_credentials().is_none() {
             return ninfo;
+        }
+        ninfo.client_id = cinfo.client_id;
+        ninfo.client_secret = cinfo.client_secret;
+        ninfo.client_secret_expires_at = cinfo.client_secret_expires_at;
+
+        // Carried even when the access token has expired -- that is precisely when it is needed,
+        // to renew without another device authorization.
+        if self.get_refresh_token().is_some() {
+            ninfo.refresh_token = cinfo.refresh_token;
         }
 
         if self.get_access_token().is_some() {
             ninfo.access_token = cinfo.access_token;
             ninfo.access_token_expires_at = cinfo.access_token_expires_at;
-        } else {
-            return ninfo;
-        }
-
-        if self.get_refresh_token().is_some() {
-            ninfo.refresh_token = cinfo.refresh_token;
         }
 
         ninfo
