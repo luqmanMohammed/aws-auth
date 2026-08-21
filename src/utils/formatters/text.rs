@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::TabularFormatter;
+use super::{TabularFormatter, normalize_field};
 
 pub struct TextFormatter<'a> {
     omit_fields: Vec<&'a str>,
@@ -32,10 +32,16 @@ where
         let header_i: HashMap<&str, usize> =
             headers.iter().enumerate().map(|(i, v)| (*v, i)).collect();
 
+        let omitted: Vec<String> = self
+            .omit_fields
+            .iter()
+            .map(|v| normalize_field(v))
+            .collect();
+
         let mut output = String::new();
         let filtered_headers = headers
             .iter()
-            .filter(|v| !self.omit_fields.contains(v))
+            .filter(|v| !omitted.contains(&normalize_field(v)))
             .collect::<Vec<_>>();
 
         let vrows: Vec<Vec<C>> = rows.into_iter().map(|r| r.into_iter().collect()).collect();

@@ -1,6 +1,16 @@
 pub mod json;
 pub mod text;
 
+/// Each format labels its columns differently ("accountId" against "Account Id"), so omitted
+/// fields are matched on this form to keep one spelling working across both.
+fn normalize_field(field: &str) -> String {
+    field
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
 pub trait TabularFormatter<C>
 where
     C: std::fmt::Display,
