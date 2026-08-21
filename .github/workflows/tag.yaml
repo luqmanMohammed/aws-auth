@@ -1,0 +1,33 @@
+name: Tag with Semantic Release
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  tag:
+    name: Tag
+    runs-on: ubuntu-latest
+    # workflow_dispatch can be started from any ref, so refuse anything but main.
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Semantic release needs the full history to find the previous tag.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+
+      # The prepare step edits Cargo.toml and refreshes Cargo.lock.
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Semantic Release
+        uses: cycjimmy/semantic-release-action@v6
+        with:
+          extra_plugins: |
+            conventional-changelog-conventionalcommits@8
+            @semantic-release/exec@7
+            @semantic-release/git@10
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
