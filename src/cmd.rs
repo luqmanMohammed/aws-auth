@@ -159,8 +159,9 @@ pub enum Commands {
         retry_interval_seconds: Option<u64>,
 
         /// Custom directory to store the AWS SSO configuration
+        /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
         /// Default: $HOME/.aws-auth
-        #[arg(short, long)]
+        #[arg(short = ARG_SHORT_CONFIG_DIR, short_alias = 'c', long, env = "AWS_AUTH_CONFIG_DIR")]
         config_dir: Option<PathBuf>,
 
         /// Recreate configuration directory if it already exists
