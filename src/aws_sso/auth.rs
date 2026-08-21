@@ -15,7 +15,6 @@ use aws_sdk_ssooidc::{Client as OidcClient, config::Credentials};
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_runtime_api::http::Response;
 use chrono::{DateTime, Duration, Utc};
-use std::thread;
 use std::time::UNIX_EPOCH;
 
 const OIDC_APP_NAME: &str = "aws-auth";
@@ -459,7 +458,7 @@ where
             self.max_attempts.max(attempts.max(0) as usize)
         };
 
-        thread::sleep(self.initial_delay.to_std().unwrap_or_default());
+        tokio::time::sleep(self.initial_delay.to_std().unwrap_or_default()).await;
 
         let mut attempts = 0;
         let create_token = loop {
@@ -487,7 +486,7 @@ where
                     break Err(err);
                 }
                 Err(_) => {
-                    thread::sleep(interval.to_std().unwrap_or_default());
+                    tokio::time::sleep(interval.to_std().unwrap_or_default()).await;
                     attempts += 1;
                 }
             }

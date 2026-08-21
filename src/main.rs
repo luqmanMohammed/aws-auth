@@ -26,7 +26,7 @@ fn error_to_string(error: impl Error) -> String {
     error.to_string()
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     match run().await {
         Ok(()) => ExitCode::SUCCESS,
