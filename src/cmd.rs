@@ -553,3 +553,40 @@ impl Batch {
         }
     }
 }
+
+// Written by an AI assistant and not human reviewed.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn twelve_digit_account_ids_are_accepted() {
+        assert_eq!(validate_account_id("111111111111").unwrap(), "111111111111");
+        assert_eq!(validate_account_id("000000000000").unwrap(), "000000000000");
+    }
+
+    #[test]
+    fn the_wrong_length_is_rejected() {
+        assert!(validate_account_id("11111111111").is_err(), "eleven digits");
+        assert!(
+            validate_account_id("1111111111111").is_err(),
+            "thirteen digits"
+        );
+        assert!(validate_account_id("").is_err(), "empty");
+    }
+
+    #[test]
+    fn non_digits_are_rejected() {
+        assert!(validate_account_id("11111111111a").is_err());
+        assert!(validate_account_id("1111 11111111").is_err());
+        assert!(validate_account_id("-11111111111").is_err());
+    }
+
+    #[test]
+    fn the_command_line_definition_is_valid() {
+        // clap panics at runtime on a malformed definition, such as two arguments sharing a
+        // short flag, so this asserts the whole tree is well formed.
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
+    }
+}

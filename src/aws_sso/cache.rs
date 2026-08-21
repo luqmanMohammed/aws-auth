@@ -249,3 +249,190 @@ pub mod mono_json {
         }
     }
 }
+
+// Written by an AI assistant and not human reviewed.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestCache {
+        cache: Cache,
+    }
+
+    impl ManageCache for TestCache {
+        type Error = std::io::Error;
+        fn load_cache(&mut self) -> Result<(), Self::Error> {
+            Ok(())
+        }
+        fn commit(&self) -> Result<(), Self::Error> {
+            Ok(())
+        }
+        fn get_cache_as_ref(&self) -> &Cache {
+            &self.cache
+        }
+        fn get_cache_as_mut(&mut self) -> &mut Cache {
+            &mut self.cache
+        }
+    }
+
+    fn in_hours(hours: i64) -> DateTime<Utc> {
+        Utc::now() + Duration::hours(hours)
+    }
+
+    /// A cache with a live client registration and, unless overridden, live tokens.
+    fn cache_with(
+        client_secret_expiry: DateTime<Utc>,
+        access_token_expiry: DateTime<Utc>,
+        refresh_token: Option<&str>,
+    ) -> TestCache {
+        TestCache {
+            cache: Cache {
+                client_info: ClientInformation {
+                    start_url: Some("https://example.awsapps.com/start".to_string()),
+                    client_id: Some("client-id".to_string()),
+                    client_secret: Some("client-secret".to_string()),
+                    client_secret_expires_at: Some(client_secret_expiry),
+                    access_token: Some("access-token".to_string()),
+                    access_token_expires_at: Some(access_token_expiry),
+                    refresh_token: refresh_token.map(str::to_string),
+                },
+                sessions: HashMap::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn a_live_cache_carries_everything() {
+        let cache = cache_with(in_hours(24), in_hours(1), Some("refresh-token"));
+
+        let info = cache.get_computed_client_info();
+
+        assert_eq!(info.client_id.as_deref(), Some("client-id"));
+        assert_eq!(info.access_token.as_deref(), Some("access-token"));
+        assert_eq!(info.refresh_token.as_deref(), Some("refresh-token"));
+    }
+
+    #[test]
+    fn an_expired_access_token_still_carries_the_refresh_token() {
+        // Dropping it here is what forced a browser login on every token expiry.
+        let cache = cache_with(in_hours(24), in_hours(-1), Some("refresh-token"));
+
+        let info = cache.get_computed_client_info();
+
+        assert_eq!(info.client_id.as_deref(), Some("client-id"));
+        assert!(info.access_token.is_none(), "the expired token is dropped");
+        assert_eq!(
+            info.refresh_token.as_deref(),
+            Some("refresh-token"),
+            "the refresh token is exactly what is needed now"
+        );
+    }
+
+    #[test]
+    fn an_access_token_inside_the_expiry_buffer_counts_as_expired() {
+        let cache = cache_with(in_hours(24), Utc::now() + Duration::minutes(1), None);
+
+        assert!(
+            cache.get_access_token().is_none(),
+            "a token expiring within the buffer should not be used"
+        );
+    }
+
+    #[test]
+    fn an_access_token_beyond_the_buffer_is_used() {
+        let cache = cache_with(in_hours(24), Utc::now() + Duration::minutes(30), None);
+
+        assert_eq!(cache.get_access_token(), Some("access-token"));
+    }
+
+    #[test]
+    fn an_expired_client_secret_invalidates_everything() {
+        let cache = cache_with(in_hours(-1), in_hours(1), Some("refresh-token"));
+
+        let info = cache.get_computed_client_info();
+
+        assert!(info.client_id.is_none(), "re-registration is required");
+        assert!(info.access_token.is_none());
+        assert!(info.refresh_token.is_none());
+    }
+
+    #[test]
+    fn a_cache_for_another_start_url_is_not_valid() {
+        let cache = cache_with(in_hours(24), in_hours(1), None);
+
+        assert!(cache.is_valid("https://example.awsapps.com/start"));
+        assert!(!cache.is_valid("https://other.awsapps.com/start"));
+    }
+
+    #[test]
+    fn sessions_are_returned_per_account_and_role() {
+        let mut cache = cache_with(in_hours(24), in_hours(1), None);
+        cache.get_cache_as_mut().sessions.insert(
+            "111111111111-Admin".to_string(),
+            CredentialsWrapper {
+                access_key_id: "AKIA".to_string(),
+                secret_access_key: "secret".to_string(),
+                session_token: None,
+                expires_after: Some(in_hours(1)),
+            },
+        );
+
+        assert!(cache.get_session("111111111111", "Admin").is_some());
+        assert!(
+            cache.get_session("111111111111", "Other").is_none(),
+            "a different role must not share a session"
+        );
+        assert!(
+            cache.get_session("222222222222", "Admin").is_none(),
+            "a different account must not share a session"
+        );
+    }
+
+    #[test]
+    fn an_expired_session_is_not_returned() {
+        let mut cache = cache_with(in_hours(24), in_hours(1), None);
+        cache.get_cache_as_mut().sessions.insert(
+            "111111111111-Admin".to_string(),
+            CredentialsWrapper {
+                access_key_id: "AKIA".to_string(),
+                secret_access_key: "secret".to_string(),
+                session_token: None,
+                expires_after: Some(Utc::now() + Duration::minutes(1)),
+            },
+        );
+
+        assert!(
+            cache.get_session("111111111111", "Admin").is_none(),
+            "a session inside the expiry buffer should not be reused"
+        );
+    }
+
+    #[test]
+    fn clearing_sessions_leaves_the_client_registration() {
+        let mut cache = cache_with(in_hours(24), in_hours(1), Some("refresh-token"));
+        cache.get_cache_as_mut().sessions.insert(
+            "111111111111-Admin".to_string(),
+            CredentialsWrapper {
+                access_key_id: "AKIA".to_string(),
+                secret_access_key: "secret".to_string(),
+                session_token: None,
+                expires_after: Some(in_hours(1)),
+            },
+        );
+
+        cache.clear_sessions();
+
+        assert!(cache.get_session("111111111111", "Admin").is_none());
+        assert_eq!(cache.get_access_token(), Some("access-token"));
+    }
+
+    #[test]
+    fn resetting_clears_the_registration_too() {
+        let mut cache = cache_with(in_hours(24), in_hours(1), Some("refresh-token"));
+
+        cache.cache_reset();
+
+        assert!(cache.get_access_token().is_none());
+        assert!(cache.get_client_credentials().is_none());
+    }
+}

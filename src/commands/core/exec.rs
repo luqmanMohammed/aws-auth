@@ -65,3 +65,44 @@ pub async fn exec_exec(credentials: Credentials, exec_inputs: ExecExecInputs) ->
 
     std::process::exit(child_exit_code(status))
 }
+
+// Written by an AI assistant and not human reviewed.
+#[cfg(test)]
+#[cfg(unix)]
+mod tests {
+    use super::*;
+    use std::os::unix::process::ExitStatusExt;
+
+    // A wait status packs a normal exit into the high byte and a signal into the low bits.
+    fn exited(code: i32) -> ExitStatus {
+        ExitStatus::from_raw(code << 8)
+    }
+
+    fn signalled(signal: i32) -> ExitStatus {
+        ExitStatus::from_raw(signal)
+    }
+
+    #[test]
+    fn a_normal_exit_is_reported_verbatim() {
+        for code in [0, 1, 42, 127, 255] {
+            assert_eq!(child_exit_code(exited(code)), code);
+        }
+    }
+
+    #[test]
+    fn a_signalled_child_is_reported_the_way_a_shell_does() {
+        assert_eq!(child_exit_code(signalled(2)), 130, "SIGINT");
+        assert_eq!(child_exit_code(signalled(9)), 137, "SIGKILL");
+        assert_eq!(child_exit_code(signalled(15)), 143, "SIGTERM");
+    }
+
+    #[test]
+    fn success_is_distinguishable_from_failure() {
+        assert_eq!(child_exit_code(exited(0)), 0);
+        assert_ne!(
+            child_exit_code(exited(1)),
+            0,
+            "a failing child must not look successful"
+        );
+    }
+}
