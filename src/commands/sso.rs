@@ -35,9 +35,9 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
                 .iter()
                 .map(|account| {
                     [
-                        account.account_id().unwrap(),
-                        account.account_name().unwrap(),
-                        account.email_address().unwrap(),
+                        account.account_id().unwrap_or_default(),
+                        account.account_name().unwrap_or_default(),
+                        account.email_address().unwrap_or_default(),
                     ]
                 })
                 .collect::<Vec<_>>();
@@ -76,7 +76,12 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
             let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
             let roles = roles
                 .iter()
-                .map(|role| [role.account_id().unwrap(), role.role_name().unwrap()])
+                .map(|role| {
+                    [
+                        role.account_id().unwrap_or_default(),
+                        role.role_name().unwrap_or_default(),
+                    ]
+                })
                 .collect::<Vec<_>>();
 
             match formatting.output {
