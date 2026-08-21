@@ -14,6 +14,8 @@ pub enum Error {
     ConfigNotFound(PathBuf, std::io::Error),
     #[error("Config contains an out of range duration: {0}")]
     DurationOutOfRange(#[from] chrono::OutOfRangeError),
+    #[error("Could not determine a home directory to hold the config; pass --config-dir")]
+    HomeDirNotFound,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -5,19 +5,20 @@ pub mod private_fs;
 pub mod worker;
 
 use crate::alias_providers::ProvideAliases;
+use crate::aws_sso::ConfigError;
 use crate::cmd::{AssumeInput, CommonArgs};
 use crate::common::AssumeIdentifier;
-use std::env;
 use std::path::{Path, PathBuf};
 
-pub fn resolve_config_dir(config_dir: Option<&Path>) -> PathBuf {
-    config_dir.map_or_else(
-        || {
-            let home_dir = home::home_dir().unwrap_or_else(env::temp_dir);
-            home_dir.join(".aws-auth")
-        },
-        PathBuf::from,
-    )
+pub fn resolve_config_dir(config_dir: Option<&Path>) -> Result<PathBuf, ConfigError> {
+    match config_dir {
+        Some(dir) => Ok(dir.to_path_buf()),
+        // Falling back to a temp dir would put credentials somewhere world-writable, so an
+        // unlocatable home is an error rather than a guess.
+        None => Ok(home::home_dir()
+            .ok_or(ConfigError::HomeDirNotFound)?
+            .join(".aws-auth")),
+    }
 }
 
 #[derive(Debug)]

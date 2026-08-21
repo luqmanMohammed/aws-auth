@@ -28,7 +28,8 @@ struct InitConfig {
 }
 
 pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
-    let config_dir = resolve_config_dir(exec_inputs.config_dir.as_deref());
+    let config_dir = resolve_config_dir(exec_inputs.config_dir.as_deref())
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::NotFound, err))?;
     let config_dir_exists = config_dir.exists();
     let config_file = config_dir.join("config.json");
 

@@ -18,7 +18,7 @@ pub enum Error {
 }
 
 pub fn exec_unlock(config_dir: Option<&Path>) -> Result<(), Error> {
-    let config_dir = resolve_config_dir(config_dir);
+    let config_dir = resolve_config_dir(config_dir)?;
 
     let config = AwsSsoConfig::load_config(&config_dir.join("config.json"))?;
 

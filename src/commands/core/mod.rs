@@ -37,7 +37,7 @@ impl From<AwsSsoManagerError> for Error {
 
 pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
     let common_args = command.get_common_args();
-    let config_dir = resolve_config_dir(common_args.config_dir.as_deref());
+    let config_dir = resolve_config_dir(common_args.config_dir.as_deref())?;
     let mut sso_manager = build_sso_mgr_cached(&config_dir, common_args.sso_cache_dir.as_deref())?;
     let mut alias_provider = alias_providers::build_alias_provider(&config_dir);
     let assume_identity = resolve_assume_identifier(&mut alias_provider, common_args)

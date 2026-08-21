@@ -56,7 +56,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
     }
 
     let batch_common = subcommand.get_common_args();
-    let config_dir = resolve_config_dir(batch_common.config_dir.as_deref());
+    let config_dir = resolve_config_dir(batch_common.config_dir.as_deref())?;
     let cache_dir = batch_common.sso_cache_dir.as_deref().unwrap_or(&config_dir);
     let mut cache_manager = CacheManager::new(cache_dir);
     let mut alias_provider = alias_providers::build_alias_provider(&config_dir);

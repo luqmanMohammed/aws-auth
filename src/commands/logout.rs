@@ -17,7 +17,7 @@ impl From<AwsSsoManagerError> for Error {
 }
 
 pub async fn exec_logout(config_dir: Option<&Path>, cache_dir: Option<&Path>) -> Result<(), Error> {
-    let config_dir = resolve_config_dir(config_dir);
+    let config_dir = resolve_config_dir(config_dir)?;
     let sso_mgr = build_sso_mgr_cached(&config_dir, cache_dir)?;
     sso_mgr.logout().await?;
     eprintln!("INFO: Successfully logged out of all SSO sessions.");

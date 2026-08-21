@@ -44,6 +44,9 @@ fn temp_path(path: &Path) -> io::Result<PathBuf> {
 /// new ones but never a partial write. The replacement also carries the owner-only mode,
 /// which is what tightens files left behind by earlier versions.
 pub fn write_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
+    // Resolved first so a path that is a symlink is written through rather than replaced by the
+    // rename below, which would otherwise quietly detach it from its target.
+    let path = &fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let temp_path = temp_path(path)?;
     let _ = fs::remove_file(&temp_path);
 
