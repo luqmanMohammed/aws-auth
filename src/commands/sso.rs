@@ -1,5 +1,6 @@
 use crate::aws_sso::{AwsSsoManagerError, ConfigError, build_sso_mgr_cached};
 use crate::cmd::Sso;
+use crate::utils::formatters;
 use crate::utils::{
     formatters::{TabularFormatter, json::JsonFormatter, text::TextFormatter},
     resolve_config_dir,
@@ -11,6 +12,8 @@ pub enum Error {
     Config(#[from] ConfigError),
     #[error("Error loading SSO accounts: {0}")]
     AwsSsoManager(Box<AwsSsoManagerError>),
+    #[error("Unknown --omit-fields value(s): {0}")]
+    UnknownOmitFields(String),
     #[error("Error formatting SSO accounts using json output: {0}")]
     JsonFormatter(#[from] serde_json::Error),
 }
@@ -30,7 +33,15 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
 
             let accounts = sso_manager.list_accounts(common.ignore_cache).await?;
 
-            let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let omit_fields: Vec<&str> =
+                formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let unknown = formatters::unknown_fields(
+                &["accountId", "accountName", "accountEmail"],
+                &omit_fields,
+            );
+            if !unknown.is_empty() {
+                return Err(Error::UnknownOmitFields(unknown.join(", ")));
+            }
             let accounts = accounts
                 .iter()
                 .map(|account| {
@@ -73,7 +84,12 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
                 .list_account_roles(&account, common.ignore_cache)
                 .await?;
 
-            let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let omit_fields: Vec<&str> =
+                formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let unknown = formatters::unknown_fields(&["accountId", "roleName"], &omit_fields);
+            if !unknown.is_empty() {
+                return Err(Error::UnknownOmitFields(unknown.join(", ")));
+            }
             let roles = roles
                 .iter()
                 .map(|role| {

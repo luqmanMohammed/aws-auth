@@ -1,6 +1,17 @@
 pub mod json;
 pub mod text;
 
+/// Names in `omit_fields` that match no column, so a misspelling is reported rather than
+/// silently leaving every column in place.
+pub fn unknown_fields<'a>(headers: &[&str], omit_fields: &[&'a str]) -> Vec<&'a str> {
+    let known: Vec<String> = headers.iter().map(|h| normalize_field(h)).collect();
+    omit_fields
+        .iter()
+        .copied()
+        .filter(|field| !known.contains(&normalize_field(field)))
+        .collect()
+}
+
 /// Each format labels its columns differently ("accountId" against "Account Id"), so omitted
 /// fields are matched on this form to keep one spelling working across both.
 fn normalize_field(field: &str) -> String {

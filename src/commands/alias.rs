@@ -1,5 +1,6 @@
 use crate::alias_providers::{AliasProviderError, ProvideAliases, build_alias_provider_and_load};
 use crate::cmd::Alias;
+use crate::utils::formatters;
 use crate::utils::formatters::TabularFormatter;
 use crate::utils::formatters::text::TextFormatter;
 use crate::utils::{self, formatters::json::JsonFormatter};
@@ -12,6 +13,8 @@ pub enum Error {
     AliasProvider(#[from] AliasProviderError),
     #[error("Alias {0} already exists, set overwrite flag to overwrite existing alias")]
     AliasAlreadyExists(String),
+    #[error("Unknown --omit-fields value(s): {0}")]
+    UnknownOmitFields(String),
     #[error("Error formating aliases list using json output: {0}")]
     JsonFormatter(#[from] serde_json::Error),
 }
@@ -43,7 +46,12 @@ pub fn exec_alias(subcommand: Alias) -> Result<(), Error> {
             let config_dir = utils::resolve_config_dir(common.config_dir.as_deref())?;
             let alias_provider = build_alias_provider_and_load(&config_dir)?;
             let aliases: Vec<[&str; 3]> = alias_provider.list_aliases()?;
-            let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let omit_fields: Vec<&str> =
+                formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let unknown = formatters::unknown_fields(&["alias", "accountId", "role"], &omit_fields);
+            if !unknown.is_empty() {
+                return Err(Error::UnknownOmitFields(unknown.join(", ")));
+            }
 
             match formatting.output {
                 crate::cmd::OutputFormat::Json => {
