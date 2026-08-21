@@ -58,6 +58,11 @@ jobs:
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
 
+      # Ahead of the release build, which is slow under link time optimisation.
+      - name: Run tests
+        run: cargo test --verbose
+        shell: bash
+
       - name: Build
         run: |
           if [ -n "${{ matrix.target }}" ]; then
@@ -72,10 +77,6 @@ jobs:
         run: |
           file target/${{ matrix.target }}/release/aws-auth
           file target/${{ matrix.target }}/release/aws-auth | grep -qE "statically linked|static-pie linked"
-
-      - name: Run tests
-        run: cargo test --verbose
-        shell: bash
 
       - name: Package artifact (unix)
         if: runner.os != 'Windows'

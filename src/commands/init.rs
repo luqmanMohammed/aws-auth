@@ -124,7 +124,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-// Written by an AI assistant and not human reviewed.
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -116,7 +116,7 @@ impl CacheManager {
     }
 }
 
-// Written by an AI assistant and not human reviewed.
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,7 +139,9 @@ mod tests {
     }
 
     /// `touch -t` is POSIX and takes a local-time stamp, so the timestamp is formatted here
-    /// rather than shelling out to a `date` whose flags differ between BSD and GNU.
+    /// rather than shelling out to a `date` whose flags differ between BSD and GNU. There is
+    /// no portable way to set an mtime from std, so the tests needing one are unix only.
+    #[cfg(unix)]
     fn set_age_days(path: &Path, days: i64) {
         let when = chrono::Local::now() - Duration::days(days);
         let status = std::process::Command::new("touch")
@@ -254,6 +256,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn pruning_removes_only_long_untouched_expired_tokens() {
         let dir = TempDir::new("eks-prune");
         let manager = manager(dir.path());
@@ -289,6 +292,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn pruning_ignores_in_flight_temporary_files() {
         let dir = TempDir::new("eks-prune-temp");
         let manager = manager(dir.path());

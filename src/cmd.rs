@@ -554,7 +554,7 @@ impl Batch {
     }
 }
 
-// Written by an AI assistant and not human reviewed.
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
 #[cfg(test)]
 mod tests {
     use super::*;

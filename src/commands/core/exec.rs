@@ -66,7 +66,7 @@ pub async fn exec_exec(credentials: Credentials, exec_inputs: ExecExecInputs) ->
     std::process::exit(child_exit_code(status))
 }
 
-// Written by an AI assistant and not human reviewed.
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {

@@ -1,4 +1,4 @@
-// Written by an AI assistant and not human reviewed.
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
