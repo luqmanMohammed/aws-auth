@@ -20,13 +20,24 @@ use commands::{
 };
 
 use std::error::Error;
+use std::process::ExitCode;
 
 fn error_to_string(error: impl Error) -> String {
     error.to_string()
 }
 
 #[tokio::main]
-async fn main() -> Result<(), String> {
+async fn main() -> ExitCode {
+    match run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("aws-auth: {}", err.trim_end());
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run() -> Result<(), String> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Init {

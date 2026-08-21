@@ -52,33 +52,33 @@ impl<
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::OidcRegisterClient(err) => writeln!(f, "Oidc Register Client Error: {}", err),
+            Error::OidcRegisterClient(err) => write!(f, "Oidc Register Client Error: {}", err),
             Error::OidcStartDeviceAuthorization(err) => {
-                writeln!(f, "Oidc Start Device Authorization Error: {}", err)
+                write!(f, "Oidc Start Device Authorization Error: {}", err)
             }
             Error::OidcMissingVerificationUri => {
-                writeln!(
+                write!(
                     f,
                     "Oidc Start Device Authorization returned no verification URL"
                 )
             }
-            Error::OidcCreateToken(err) => writeln!(f, "Oidc Create Token Error: {}", err),
+            Error::OidcCreateToken(err) => write!(f, "Oidc Create Token Error: {}", err),
             Error::OidcTokenRefreshFailed(err) => {
-                writeln!(f, "Oidc Token Refresh Failed Error: {}", err)
+                write!(f, "Oidc Token Refresh Failed Error: {}", err)
             }
             Error::SsoGetRoleCredentials(err) => {
-                writeln!(f, "Sso GetRole Credentials Error: {}", err)
+                write!(f, "Sso GetRole Credentials Error: {}", err)
             }
-            Error::Cache(err) => writeln!(f, "Cache Error: {}", err),
+            Error::Cache(err) => write!(f, "Cache Error: {}", err),
             Error::OidcListAccounts(err) => {
-                writeln!(f, "Oidc List Accounts Error: {}", err)
+                write!(f, "Oidc List Accounts Error: {}", err)
             }
             Error::OidcListAccountRoles(err) => {
-                writeln!(f, "Oidc List Account Roles Error: {}", err)
+                write!(f, "Oidc List Account Roles Error: {}", err)
             }
-            Error::LockProvider(err) => writeln!(f, "Lock Provider Error: {}", err),
+            Error::LockProvider(err) => write!(f, "Lock Provider Error: {}", err),
             Error::UpstreamLocked => {
-                writeln!(
+                write!(
                     f,
                     "Maximum retry attempts reached, upstream locked to prevent IP ban by AWS. Use aws-auth unlock to unlock."
                 )
