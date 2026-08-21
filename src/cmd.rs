@@ -140,7 +140,7 @@ pub enum Commands {
         sso_start_url: Option<String>,
 
         /// AWS region where the SSO service is hosted (e.g., us-east-1)
-        #[arg(short = 'r', long)]
+        #[arg(long, short_alias = 'r')]
         sso_region: Option<String>,
 
         /// Maximum authentication retry attempts
@@ -150,12 +150,12 @@ pub enum Commands {
 
         /// Initial delay in seconds before first retry attempt
         /// Default: 10
-        #[arg(short, long)]
+        #[arg(long, short_alias = 'i')]
         initial_delay_seconds: Option<u64>,
 
         /// Interval in seconds between retry attempts
         /// Default: 5
-        #[arg(short = 't', long)]
+        #[arg(long, short_alias = 't')]
         retry_interval_seconds: Option<u64>,
 
         /// Custom directory to store the AWS SSO configuration
@@ -166,7 +166,12 @@ pub enum Commands {
 
         /// Recreate configuration directory if it already exists
         /// Default: false (preserve existing configuration)
-        #[arg(short = 'R', long, conflicts_with = "update", default_value_t = false)]
+        #[arg(
+            long,
+            short_alias = 'R',
+            conflicts_with = "update",
+            default_value_t = false
+        )]
         recreate: bool,
 
         /// Update existing configuration if it already exists
