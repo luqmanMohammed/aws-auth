@@ -1,0 +1,53 @@
+name: Release with release-plz
+on:
+  # Manual entry point: opens or refreshes the release pull request.
+  workflow_dispatch:
+  # Merging that pull request lands the version bump, which is what triggers the tag.
+  push:
+    branches: [main]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  release-pr:
+    name: Release PR
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-pr
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # release-plz needs the full history to find the previous tag.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: release-plz/action@v0
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    name: Tag
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-tag
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Tags only when Cargo.toml carries a version that has no tag yet, so ordinary
+      # pushes to main do nothing. The tag then drives build.yaml.
+      - uses: release-plz/action@v0
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
