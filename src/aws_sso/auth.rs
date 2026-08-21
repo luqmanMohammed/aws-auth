@@ -91,6 +91,32 @@ impl<
 {
 }
 
+impl<
+    CE: 'static + std::error::Error + std::fmt::Debug,
+    LE: 'static + std::error::Error + std::fmt::Debug,
+> Error<CE, LE>
+{
+    /// The SSO portal API has no distinct error for a role the caller may not assume, so this is
+    /// also what a forbidden role looks like -- callers must not treat it as proof of a bad token.
+    fn is_unauthorized(&self) -> bool {
+        match self {
+            Error::SsoGetRoleCredentials(err) => matches!(
+                err.as_service_error(),
+                Some(GetRoleCredentialsError::UnauthorizedException(_))
+            ),
+            Error::OidcListAccounts(err) => matches!(
+                err.as_service_error(),
+                Some(ListAccountsError::UnauthorizedException(_))
+            ),
+            Error::OidcListAccountRoles(err) => matches!(
+                err.as_service_error(),
+                Some(ListAccountRolesError::UnauthorizedException(_))
+            ),
+            _ => false,
+        }
+    }
+}
+
 type Result<T, CE, LE> = std::result::Result<T, Error<CE, LE>>;
 
 pub struct AuthManager<'a, C, L>
@@ -109,6 +135,7 @@ where
     client_info: ClientInformation,
     code_writer: Box<dyn std::io::Write + 'static>,
     handle_cache: bool,
+    access_token_reacquired: bool,
 }
 
 impl<'a, C, L> AuthManager<'a, C, L>
@@ -153,6 +180,7 @@ where
             },
             handle_cache,
             upstream_lock,
+            access_token_reacquired: false,
         }
     }
 
@@ -182,7 +210,7 @@ where
         ignore_cache: bool,
     ) -> Result<T, C::Error, L::Error>
     where
-        F: AsyncFnOnce(&mut Self) -> Result<T, C::Error, L::Error>,
+        F: AsyncFn(&mut Self) -> Result<T, C::Error, L::Error>,
     {
         if let Some(ref mut ul) = self.upstream_lock {
             ul.load_lock().map_err(Error::LockProvider)?;
@@ -206,9 +234,35 @@ where
             self.client_info.access_token = None;
             self.client_info.refresh_token = None;
         }
+        let access_token_from_cache = self.client_info.access_token.is_some();
         self.ensure_access_token().await?;
 
-        let result = resolver(self).await;
+        let mut result = resolver(self).await;
+
+        // A token straight from the cache may have been revoked upstream since it was stored.
+        // Bounded to one silent re-acquisition per manager because a forbidden role is
+        // indistinguishable from a bad token, and batch probing relies on that case staying cheap.
+        if access_token_from_cache
+            && !self.access_token_reacquired
+            && self.client_info.refresh_token.is_some()
+            && result.as_ref().err().is_some_and(Error::is_unauthorized)
+        {
+            self.access_token_reacquired = true;
+            self.client_info.access_token = None;
+            self.client_info.access_token_expires_at = None;
+            // Refreshed directly rather than through ensure_access_token, so a failure here can
+            // never escalate to a device authorization in the middle of someone's command.
+            result = match self.refresh_access_token().await {
+                Ok(()) => {
+                    self.cache_manager.clear_sessions();
+                    resolver(self).await
+                }
+                Err(err) => {
+                    self.client_info.refresh_token = None;
+                    Err(err)
+                }
+            };
+        }
         self.cache_manager.set_client_info(self.client_info.clone());
         if self.handle_cache
             && let Err(err) = self.cache_manager.commit()
