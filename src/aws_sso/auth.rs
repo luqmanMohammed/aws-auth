@@ -34,7 +34,7 @@ pub enum Error<
 > {
     OidcRegisterClient(SdkError<RegisterClientError, Response>),
     OidcStartDeviceAuthorization(SdkError<StartDeviceAuthorizationError, Response>),
-    OidcWebBrowserApprove(std::io::Error),
+    OidcMissingVerificationUri,
     OidcCreateToken(SdkError<CreateTokenError, Response>),
     OidcTokenRefreshFailed(SdkError<CreateTokenError, Response>),
     SsoGetRoleCredentials(SdkError<GetRoleCredentialsError, Response>),
@@ -56,8 +56,11 @@ impl<
             Error::OidcStartDeviceAuthorization(err) => {
                 writeln!(f, "Oidc Start Device Authorization Error: {}", err)
             }
-            Error::OidcWebBrowserApprove(err) => {
-                writeln!(f, "Oidc Web Browser Approve Error: {}", err)
+            Error::OidcMissingVerificationUri => {
+                writeln!(
+                    f,
+                    "Oidc Start Device Authorization returned no verification URL"
+                )
             }
             Error::OidcCreateToken(err) => writeln!(f, "Oidc Create Token Error: {}", err),
             Error::OidcTokenRefreshFailed(err) => {
@@ -419,6 +422,11 @@ where
             .await
             .map_err(Error::OidcStartDeviceAuthorization)?;
 
+        let verification_uri = device_auth
+            .verification_uri_complete
+            .as_deref()
+            .ok_or(Error::OidcMissingVerificationUri)?;
+
         let _ = writeln!(
             self.code_writer,
             "User Code: {}",
@@ -427,15 +435,14 @@ where
             )
         );
 
-        webbrowser::open(
-            device_auth
-                .verification_uri_complete
-                .as_deref()
-                .expect("verification_uri should be present"),
-        )
-        .map_err(Error::OidcWebBrowserApprove)?;
-
-        thread::sleep(self.initial_delay.to_std().unwrap());
+        let _ = writeln!(self.code_writer, "Verification URL: {verification_uri}");
+        let browser_opened = webbrowser::open(verification_uri).is_ok();
+        if !browser_opened {
+            let _ = writeln!(
+                self.code_writer,
+                "Could not open a browser. Open the verification URL to continue."
+            );
+        }
 
         let device_interval = Duration::seconds(device_auth.interval as i64);
         let interval = if self.retry_interval < device_interval {
@@ -443,6 +450,17 @@ where
         } else {
             self.retry_interval
         };
+
+        let max_attempts = if browser_opened {
+            self.max_attempts
+        } else {
+            let remaining = Duration::seconds(device_auth.expires_in as i64) - self.initial_delay;
+            let attempts = remaining.num_seconds() / interval.num_seconds().max(1);
+            self.max_attempts.max(attempts.max(0) as usize)
+        };
+
+        thread::sleep(self.initial_delay.to_std().unwrap());
+
         let mut attempts = 0;
         let create_token = loop {
             match self
@@ -461,7 +479,7 @@ where
                 .await
             {
                 Ok(token) => break Ok(token),
-                Err(err) if attempts >= self.max_attempts => {
+                Err(err) if attempts >= max_attempts => {
                     if let Some(ref mut lock) = self.upstream_lock {
                         lock.get_lock_mut().increment(1);
                         lock.save_lock().map_err(Error::LockProvider)?;
