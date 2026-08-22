@@ -24,6 +24,7 @@ const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_CREATE_TOKEN_INITIAL_DELAY: Duration = Duration::seconds(10);
 const DEFAULT_CREATE_TOKEN_RETRY_INTERVAL: Duration = Duration::seconds(5);
 const DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS: usize = 10;
+const CREATE_TOKEN_SLOW_DOWN_BACKOFF: Duration = Duration::seconds(5);
 const EXPECT_MESSAGE: &str = "Should be present, caller pub function assume_role asures it";
 
 #[derive(Debug)]
@@ -444,7 +445,7 @@ where
         }
 
         let device_interval = Duration::seconds(device_auth.interval as i64);
-        let interval = if self.retry_interval < device_interval {
+        let mut interval = if self.retry_interval < device_interval {
             device_interval
         } else {
             self.retry_interval
@@ -460,7 +461,7 @@ where
 
         tokio::time::sleep(self.initial_delay.to_std().unwrap_or_default()).await;
 
-        let mut attempts = 0;
+        let mut attempts = 1;
         let create_token = loop {
             match self
                 .oidc_client
@@ -478,14 +479,21 @@ where
                 .await
             {
                 Ok(token) => break Ok(token),
-                Err(err) if attempts >= max_attempts => {
-                    if let Some(ref mut lock) = self.upstream_lock {
-                        lock.get_lock_mut().increment(1);
-                        lock.save_lock().map_err(Error::LockProvider)?;
+                Err(err) => {
+                    match err.as_service_error() {
+                        Some(CreateTokenError::AuthorizationPendingException(_)) => {}
+                        Some(CreateTokenError::SlowDownException(_)) => {
+                            interval += CREATE_TOKEN_SLOW_DOWN_BACKOFF;
+                        }
+                        _ => break Err(err),
                     }
-                    break Err(err);
-                }
-                Err(_) => {
+                    if attempts >= max_attempts {
+                        if let Some(ref mut lock) = self.upstream_lock {
+                            lock.get_lock_mut().increment(1);
+                            lock.save_lock().map_err(Error::LockProvider)?;
+                        }
+                        break Err(err);
+                    }
                     tokio::time::sleep(interval.to_std().unwrap_or_default()).await;
                     attempts += 1;
                 }
