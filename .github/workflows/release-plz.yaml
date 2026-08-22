@@ -1,17 +1,17 @@
 name: Release with release-plz
 on:
-  # Manual entry point: opens or refreshes the release pull request.
-  workflow_dispatch:
-  # Merging that pull request lands the version bump, which is what triggers the tag.
+  # The release pull request is kept current as commits land, so what is waiting to be
+  # released is always visible. Merging it is the release; nothing publishes on its own.
   push:
     branches: [main]
+  workflow_dispatch:
 permissions:
   contents: write
   pull-requests: write
 jobs:
   release-pr:
     name: Release PR
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
       group: release-plz-pr
@@ -32,7 +32,7 @@ jobs:
 
   release:
     name: Tag
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
       group: release-plz-tag

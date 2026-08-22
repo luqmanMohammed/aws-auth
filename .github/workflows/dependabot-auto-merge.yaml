@@ -1,0 +1,35 @@
+name: Dependabot auto-merge
+on: pull_request
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  auto-merge:
+    name: Auto-merge
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dependabot/fetch-metadata@v2
+        id: metadata
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Patch updates only, and never the AWS SDK. The test suite covers this crate's own
+      # logic rather than its conversation with AWS, so an SDK change can pass every check
+      # here and still alter credential handling.
+      - name: Enable auto-merge
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' &&
+          !contains(steps.metadata.outputs.dependency-names, 'aws-')
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Explain why it was left open
+        if: |
+          steps.metadata.outputs.update-type != 'version-update:semver-patch' ||
+          contains(steps.metadata.outputs.dependency-names, 'aws-')
+        run: |
+          echo "Left for review: ${{ steps.metadata.outputs.update-type }}" \
+               "for ${{ steps.metadata.outputs.dependency-names }}" >> "$GITHUB_STEP_SUMMARY"
