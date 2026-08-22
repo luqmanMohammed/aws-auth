@@ -24,7 +24,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: release-plz/action@v0
+      - uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
@@ -46,7 +46,7 @@ jobs:
 
       # Tags only when Cargo.toml carries a version that has no tag yet, so ordinary
       # pushes to main do nothing. The tag then drives build.yaml.
-      - uses: release-plz/action@v0
+      - uses: release-plz/action@v0.5
         with:
           command: release
         env:
