@@ -31,14 +31,14 @@ pub enum Error<
     CE: 'static + std::error::Error + std::fmt::Debug,
     LE: 'static + std::error::Error + std::fmt::Debug,
 > {
-    OidcRegisterClient(SdkError<RegisterClientError, Response>),
-    OidcStartDeviceAuthorization(SdkError<StartDeviceAuthorizationError, Response>),
+    OidcRegisterClient(Box<SdkError<RegisterClientError, Response>>),
+    OidcStartDeviceAuthorization(Box<SdkError<StartDeviceAuthorizationError, Response>>),
     OidcMissingVerificationUri,
-    OidcCreateToken(SdkError<CreateTokenError, Response>),
-    OidcTokenRefreshFailed(SdkError<CreateTokenError, Response>),
-    SsoGetRoleCredentials(SdkError<GetRoleCredentialsError, Response>),
-    OidcListAccounts(SdkError<ListAccountsError, Response>),
-    OidcListAccountRoles(SdkError<ListAccountRolesError, Response>),
+    OidcCreateToken(Box<SdkError<CreateTokenError, Response>>),
+    OidcTokenRefreshFailed(Box<SdkError<CreateTokenError, Response>>),
+    SsoGetRoleCredentials(Box<SdkError<GetRoleCredentialsError, Response>>),
+    OidcListAccounts(Box<SdkError<ListAccountsError, Response>>),
+    OidcListAccountRoles(Box<SdkError<ListAccountRolesError, Response>>),
     Cache(CE),
     LockProvider(LE),
     UpstreamLocked,
@@ -302,7 +302,7 @@ where
                     .send()
                     .collect::<std::result::Result<Vec<_>, _>>()
                     .await
-                    .map_err(Error::OidcListAccounts)?
+                    .map_err(|err| Error::OidcListAccounts(Box::new(err)))?
                     .into_iter()
                     .filter_map(|res| res.account_list)
                     .flatten()
@@ -337,7 +337,7 @@ where
                     .send()
                     .collect::<std::result::Result<Vec<_>, _>>()
                     .await
-                    .map_err(Error::OidcListAccountRoles)?
+                    .map_err(|err| Error::OidcListAccountRoles(Box::new(err)))?
                     .into_iter()
                     .filter_map(|res| res.role_list)
                     .flatten()
@@ -398,7 +398,7 @@ where
             .scopes(OIDC_SCOPE)
             .send()
             .await
-            .map_err(Error::OidcRegisterClient)?;
+            .map_err(|err| Error::OidcRegisterClient(Box::new(err)))?;
 
         self.client_info.client_id = register_client.client_id;
         self.client_info.client_secret = register_client.client_secret;
@@ -422,7 +422,7 @@ where
             .start_url(&self.start_url)
             .send()
             .await
-            .map_err(Error::OidcStartDeviceAuthorization)?;
+            .map_err(|err| Error::OidcStartDeviceAuthorization(Box::new(err)))?;
 
         let verification_uri = device_auth
             .verification_uri_complete
@@ -491,7 +491,7 @@ where
                 }
             }
         }
-        .map_err(Error::OidcCreateToken)?;
+        .map_err(|err| Error::OidcCreateToken(Box::new(err)))?;
 
         self.client_info.access_token = create_token.access_token;
         self.client_info.refresh_token = create_token.refresh_token;
@@ -520,7 +520,7 @@ where
             )
             .send()
             .await
-            .map_err(Error::OidcTokenRefreshFailed)?;
+            .map_err(|err| Error::OidcTokenRefreshFailed(Box::new(err)))?;
         self.client_info.access_token = create_token.access_token;
         self.client_info.refresh_token = create_token.refresh_token;
         self.client_info.access_token_expires_at =
@@ -546,7 +546,7 @@ where
             )
             .send()
             .await
-            .map_err(Error::SsoGetRoleCredentials)?
+            .map_err(|err| Error::SsoGetRoleCredentials(Box::new(err)))?
             .role_credentials
             .expect("Exit early if GetRoleCredentials fails, role credentials should be present");
 
