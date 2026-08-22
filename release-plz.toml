@@ -18,6 +18,12 @@ features_always_increment_minor = true
 
 changelog_update = true
 
+# Only the commit types that change the compiled binary open a release pull request.
+# Without this a CI or test change bumps the version on its own, producing a release
+# whose changelog section is empty because those types are skipped below. A chore that
+# does alter the binary, such as a dependency or toolchain upgrade, belongs under build.
+release_commits = "^(feat|fix|perf|refactor|build)[(:]"
+
 [changelog]
 # First match wins, so the two skips at the top have to precede the type rules: merge
 # commits carry no type, and release-plz's own release commit would otherwise appear in
