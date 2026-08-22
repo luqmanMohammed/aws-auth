@@ -1,6 +1,6 @@
 [package]
 name = "aws-auth"
-version = "0.2.9"
+version = "0.3.0"
 edition = "2024"
 authors = ["luqmanMohammed <luqmanMohammed@users.noreply.github.com>"]
 description = "Get AWS credentials from IAM Identity Center into your shell, a command, kubectl or many accounts at once"
