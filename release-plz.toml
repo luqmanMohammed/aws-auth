@@ -16,6 +16,21 @@ git_tag_name = "v{{ version }}"
 # Nothing depends on this crate as a library, so the spec behaviour is the one that applies.
 features_always_increment_minor = true
 
-# The changelog is written by hand, because it explains consequences that commit
-# subjects cannot, such as which changes alter behaviour for existing installs.
-changelog_update = false
+changelog_update = true
+
+[changelog]
+# First match wins, so the two skips at the top have to precede the type rules: merge
+# commits carry no type, and release-plz's own release commit would otherwise appear in
+# the changelog it is writing.
+commit_parsers = [
+  { message = "^chore: release", skip = true },
+  { message = "^Merge ", skip = true },
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^docs", group = "Documentation" },
+  { message = "^(build|ci)\\(deps", group = "Dependencies" },
+  { message = "^(chore|ci|build|test|style)", skip = true },
+  { message = ".*", skip = true },
+]
