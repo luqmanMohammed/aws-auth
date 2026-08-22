@@ -32,11 +32,17 @@ pub fn exec_unlock(config_dir: Option<&Path>) -> Result<(), Error> {
             None,
         );
         if let Err(err) = lock_provider.load_lock() {
-            if err.kind() == std::io::ErrorKind::NotFound {
-                eprintln!("INFO: Locking is not enabled.");
-                continue;
-            } else {
-                return Err(Error::Lock(err));
+            match err.kind() {
+                std::io::ErrorKind::NotFound => {
+                    eprintln!("INFO: Locking is not enabled.");
+                    continue;
+                }
+                std::io::ErrorKind::InvalidData | std::io::ErrorKind::UnexpectedEof => {
+                    lock_provider.discard_lock()?;
+                    eprintln!("INFO: Lock could not be read ({err}) and has been removed.");
+                    continue;
+                }
+                _ => return Err(Error::Lock(err)),
             }
         }
         if lock_provider.get_lock().is_locked() {
