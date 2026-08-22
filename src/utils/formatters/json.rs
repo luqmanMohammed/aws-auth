@@ -1,4 +1,4 @@
-use super::TabularFormatter;
+use super::{TabularFormatter, normalize_field};
 
 pub struct JsonFormatter<'a> {
     omit_fields: Vec<&'a str>,
@@ -26,12 +26,22 @@ where
         I: IntoIterator<Item = C> + 'r,
         O: IntoIterator<Item = I> + 'r,
     {
+        let omitted: Vec<String> = self
+            .omit_fields
+            .iter()
+            .map(|v| normalize_field(v))
+            .collect();
+        let omitted: Vec<bool> = headers
+            .iter()
+            .map(|header| omitted.contains(&normalize_field(header)))
+            .collect();
+
         if self.no_headers {
             let mut json_rows = Vec::new();
             for row in rows {
                 let mut json_row = Vec::new();
                 for (i, field) in row.into_iter().enumerate() {
-                    if self.omit_fields.contains(&headers[i]) {
+                    if omitted[i] {
                         continue;
                     }
                     json_row.push(serde_json::to_value(field)?);
@@ -44,7 +54,7 @@ where
             for row in rows {
                 let mut json_row = serde_json::json!({});
                 for (i, field) in row.into_iter().enumerate() {
-                    if self.omit_fields.contains(&headers[i]) {
+                    if omitted[i] {
                         continue;
                     }
                     json_row[headers[i]] = serde_json::to_value(field)?;

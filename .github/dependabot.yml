@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      # `build` maps to a patch release in release-plz. Without an explicit prefix the
+      # commit carries no conventional type and would not count towards a release at all.
+      prefix: build
+      include: scope
+    open-pull-requests-limit: 5
+    groups:
+      # Held separate because these are reviewed by hand rather than auto-merged, and
+      # because the aws-sdk crates release in lockstep.
+      aws-sdk:
+        patterns: ["aws-*"]
+      cargo:
+        patterns: ["*"]
+        exclude-patterns: ["aws-*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]

@@ -106,3 +106,158 @@ impl CounterLockProvider for DecayingJsonCounterLockProvider {
         self.lock.as_mut().expect("Make sure lock is loaded")
     }
 }
+
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::test_support::TempDir;
+
+    fn unlocked(threshold: u64) -> CounterLock {
+        CounterLock {
+            threshold,
+            count: 0,
+            locked_at: None,
+        }
+    }
+
+    #[test]
+    fn locks_once_the_threshold_is_reached() {
+        let mut lock = unlocked(3);
+        lock.increment(1);
+        assert!(!lock.is_locked(), "one of three");
+        lock.increment(1);
+        assert!(!lock.is_locked(), "two of three");
+        lock.increment(1);
+        assert!(lock.is_locked(), "three of three should lock");
+    }
+
+    #[test]
+    fn a_larger_increment_can_cross_the_threshold_at_once() {
+        let mut lock = unlocked(3);
+        lock.increment(5);
+        assert!(lock.is_locked());
+    }
+
+    #[test]
+    fn resetting_clears_both_the_count_and_the_lock() {
+        let mut lock = unlocked(1);
+        lock.increment(1);
+        assert!(lock.is_locked(), "precondition");
+
+        lock.reset();
+
+        assert!(!lock.is_locked());
+        lock.increment(1);
+        assert!(lock.is_locked(), "counting restarts from zero");
+    }
+
+    #[test]
+    fn a_missing_lock_file_loads_as_unlocked() {
+        let dir = TempDir::new("lock-missing");
+        let mut provider = DecayingJsonCounterLockProvider::new(dir.path(), "l", 2, None);
+
+        provider
+            .load_lock()
+            .expect("a missing file is not an error");
+
+        assert!(!provider.get_lock().is_locked());
+    }
+
+    #[test]
+    fn a_lock_survives_a_save_and_load() {
+        let dir = TempDir::new("lock-roundtrip");
+        let mut provider = DecayingJsonCounterLockProvider::new(dir.path(), "l", 2, None);
+        provider.load_lock().unwrap();
+        provider.get_lock_mut().increment(2);
+        provider.save_lock().unwrap();
+
+        let mut reloaded = DecayingJsonCounterLockProvider::new(dir.path(), "l", 2, None);
+        reloaded.load_lock().unwrap();
+
+        assert!(reloaded.get_lock().is_locked(), "the lock should persist");
+    }
+
+    #[test]
+    fn a_lock_older_than_the_decay_window_clears_on_load() {
+        let dir = TempDir::new("lock-decayed");
+        let mut provider = DecayingJsonCounterLockProvider::new(dir.path(), "l", 1, None);
+        provider.load_lock().unwrap();
+        provider.get_lock_mut().increment(1);
+        provider.save_lock().unwrap();
+        assert!(provider.get_lock().is_locked(), "precondition");
+
+        // Same file, but now read by a provider that expires locks after a second.
+        let mut decaying = DecayingJsonCounterLockProvider::new(
+            dir.path(),
+            "l",
+            1,
+            Some(chrono::Duration::seconds(-1)),
+        );
+        decaying.load_lock().unwrap();
+
+        assert!(
+            !decaying.get_lock().is_locked(),
+            "the lock should have decayed"
+        );
+    }
+
+    #[test]
+    fn a_lock_inside_the_decay_window_is_kept() {
+        let dir = TempDir::new("lock-fresh");
+        let mut provider = DecayingJsonCounterLockProvider::new(dir.path(), "l", 1, None);
+        provider.load_lock().unwrap();
+        provider.get_lock_mut().increment(1);
+        provider.save_lock().unwrap();
+
+        let mut still_locked = DecayingJsonCounterLockProvider::new(
+            dir.path(),
+            "l",
+            1,
+            Some(chrono::Duration::hours(2)),
+        );
+        still_locked.load_lock().unwrap();
+
+        assert!(still_locked.get_lock().is_locked());
+    }
+
+    #[test]
+    fn a_decayed_lock_is_written_back_so_later_runs_see_it_cleared() {
+        let dir = TempDir::new("lock-persist-decay");
+        let mut provider = DecayingJsonCounterLockProvider::new(dir.path(), "l", 1, None);
+        provider.load_lock().unwrap();
+        provider.get_lock_mut().increment(1);
+        provider.save_lock().unwrap();
+
+        let mut decaying = DecayingJsonCounterLockProvider::new(
+            dir.path(),
+            "l",
+            1,
+            Some(chrono::Duration::seconds(-1)),
+        );
+        decaying.load_lock().unwrap();
+
+        let mut fresh = DecayingJsonCounterLockProvider::new(dir.path(), "l", 1, None);
+        fresh.load_lock().unwrap();
+        assert!(
+            !fresh.get_lock().is_locked(),
+            "the cleared state should have been saved"
+        );
+    }
+
+    #[test]
+    fn the_configured_threshold_overrides_the_stored_one() {
+        let dir = TempDir::new("lock-threshold");
+        let mut provider = DecayingJsonCounterLockProvider::new(dir.path(), "l", 10, None);
+        provider.load_lock().unwrap();
+        provider.get_lock_mut().increment(3);
+        provider.save_lock().unwrap();
+        assert!(!provider.get_lock().is_locked(), "three of ten");
+
+        let mut stricter = DecayingJsonCounterLockProvider::new(dir.path(), "l", 2, None);
+        stricter.load_lock().unwrap();
+        stricter.get_lock_mut().increment(0);
+
+        assert_eq!(stricter.get_lock().threshold, 2);
+    }
+}

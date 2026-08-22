@@ -1,6 +1,6 @@
 mod exec;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::utils::worker::ThreadPool;
 use aws_sdk_ssooidc::config::Credentials;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::{
     alias_providers::{self, AliasProviderError, ProvideAliases},
     aws_sso::{
-        AwsSsoManagerError, CacheManager, CacheManagerError, build_sso_mgr_manual,
+        AwsSsoManagerError, CacheManager, CacheManagerError, ConfigError, build_sso_mgr_manual,
         cache::ManageCache,
     },
     cmd::Batch,
@@ -23,6 +23,8 @@ use crate::{
 pub enum Error {
     #[error("Cache error: {0}")]
     Cache(#[from] CacheManagerError),
+    #[error("Error loading config: {0}")]
+    Config(#[from] ConfigError),
     #[error("Error getting credentials from AWS SSO: {0}")]
     AwsSso(Box<AwsSsoManagerError>),
     #[error("Provide arguments: {0}")]
@@ -33,6 +35,10 @@ pub enum Error {
     Regex(#[from] regex::Error),
     #[error("Command Input validation failed: {0}")]
     ValidationFailed(String),
+    #[error("No accounts matched the given account ids, aliases or filter")]
+    NoAccountsTargeted,
+    #[error("Could not resolve credentials for any of the {0} targeted accounts")]
+    NoCredentialsResolved(usize),
 }
 
 impl From<AwsSsoManagerError> for Error {
@@ -50,11 +56,11 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
     }
 
     let batch_common = subcommand.get_common_args();
-    let config_dir = resolve_config_dir(batch_common.config_dir.as_deref());
+    let config_dir = resolve_config_dir(batch_common.config_dir.as_deref())?;
     let cache_dir = batch_common.sso_cache_dir.as_deref().unwrap_or(&config_dir);
     let mut cache_manager = CacheManager::new(cache_dir);
     let mut alias_provider = alias_providers::build_alias_provider(&config_dir);
-    let mut sso_manager = build_sso_mgr_manual(&mut cache_manager, &config_dir);
+    let mut sso_manager = build_sso_mgr_manual(&mut cache_manager, &config_dir)?;
     sso_manager.load_cache(batch_common.ignore_cache);
 
     let grouped_possible_assumes: Vec<(String, String)> = if let Some(ref aliases) =
@@ -125,13 +131,17 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
         }
     };
 
+    if grouped_possible_assumes.is_empty() {
+        return Err(Error::NoAccountsTargeted);
+    }
+
     let mut credentials_map: HashMap<String, Credentials> = HashMap::new();
-    for (account_id, role_name) in grouped_possible_assumes {
-        if credentials_map.contains_key(&account_id) {
+    for (account_id, role_name) in &grouped_possible_assumes {
+        if credentials_map.contains_key(account_id) {
             continue;
         }
         match sso_manager
-            .assume_role(&account_id, &role_name, false, batch_common.ignore_cache)
+            .assume_role(account_id, role_name, false, batch_common.ignore_cache)
             .await
         {
             Ok(credentials) => {
@@ -145,13 +155,35 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                 if let AwsSsoManagerError::SsoGetRoleCredentials(_) = err {
                     elog!(
                         batch_common.debug,
-                        "Unauthorized to resolve credentials for account {account_id} using the {role_name} role"
+                        "Could not resolve credentials for account {account_id} using the {role_name} role: {err}"
                     );
                 } else {
                     Err(Error::AwsSso(Box::new(err)))?;
                 }
             }
         }
+    }
+
+    // Reported unconditionally: a role_order fallback failing is routine, but an account that
+    // resolved under no role at all is silently missing from the run.
+    let mut seen = HashSet::new();
+    let mut skipped: Vec<&str> = Vec::new();
+    for (account_id, _) in &grouped_possible_assumes {
+        if !credentials_map.contains_key(account_id) && seen.insert(account_id.as_str()) {
+            skipped.push(account_id);
+        }
+    }
+    let targeted = credentials_map.len() + skipped.len();
+    if !skipped.is_empty() {
+        eprintln!(
+            "WARN: Could not resolve credentials for {} of {} accounts: {}",
+            skipped.len(),
+            targeted,
+            skipped.join(", ")
+        );
+    }
+    if credentials_map.is_empty() {
+        return Err(Error::NoCredentialsResolved(targeted));
     }
 
     cache_manager.commit()?;

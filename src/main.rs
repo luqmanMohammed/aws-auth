@@ -20,13 +20,24 @@ use commands::{
 };
 
 use std::error::Error;
+use std::process::ExitCode;
 
 fn error_to_string(error: impl Error) -> String {
     error.to_string()
 }
 
-#[tokio::main]
-async fn main() -> Result<(), String> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> ExitCode {
+    match run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("aws-auth: {}", err.trim_end());
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run() -> Result<(), String> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Init {
@@ -40,6 +51,7 @@ async fn main() -> Result<(), String> {
             create_token_retry_threshold,
             create_token_lock_decay_seconds,
             update,
+            no_browser,
         } => {
             init::exec_init(ExecInitInputs {
                 config_dir,
@@ -53,6 +65,7 @@ async fn main() -> Result<(), String> {
                     .map(|s| chrono::Duration::seconds(s as i64)),
                 create_token_retry_threshold,
                 update,
+                no_browser,
             })
             .map_err(error_to_string)?;
         }

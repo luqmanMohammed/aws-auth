@@ -1,15 +1,20 @@
 use crate::alias_providers::{AliasProviderError, ProvideAliases, build_alias_provider_and_load};
 use crate::cmd::Alias;
+use crate::utils::formatters;
 use crate::utils::formatters::TabularFormatter;
 use crate::utils::formatters::text::TextFormatter;
 use crate::utils::{self, formatters::json::JsonFormatter};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Error loading config: {0}")]
+    Config(#[from] crate::aws_sso::ConfigError),
     #[error("Error loading aliases: {0}")]
     AliasProvider(#[from] AliasProviderError),
     #[error("Alias {0} already exists, set overwrite flag to overwrite existing alias")]
     AliasAlreadyExists(String),
+    #[error("Unknown --omit-fields value(s): {0}")]
+    UnknownOmitFields(String),
     #[error("Error formating aliases list using json output: {0}")]
     JsonFormatter(#[from] serde_json::Error),
 }
@@ -23,7 +28,7 @@ pub fn exec_alias(subcommand: Alias) -> Result<(), Error> {
             role,
             overwrite,
         } => {
-            let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
+            let config_dir = utils::resolve_config_dir(common.config_dir.as_deref())?;
             let mut alias_provider = build_alias_provider_and_load(&config_dir)?;
             if alias_provider.get_alias(&alias)?.is_some() && !overwrite {
                 return Err(Error::AliasAlreadyExists(alias));
@@ -33,15 +38,20 @@ pub fn exec_alias(subcommand: Alias) -> Result<(), Error> {
                 .map_err(Error::AliasProvider)?;
         }
         Alias::Unset { common, alias } => {
-            let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
+            let config_dir = utils::resolve_config_dir(common.config_dir.as_deref())?;
             let mut alias_provider = build_alias_provider_and_load(&config_dir)?;
             alias_provider.unset_alias(&alias)?;
         }
         Alias::List { common, formatting } => {
-            let config_dir = utils::resolve_config_dir(common.config_dir.as_deref());
+            let config_dir = utils::resolve_config_dir(common.config_dir.as_deref())?;
             let alias_provider = build_alias_provider_and_load(&config_dir)?;
             let aliases: Vec<[&str; 3]> = alias_provider.list_aliases()?;
-            let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let omit_fields: Vec<&str> =
+                formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let unknown = formatters::unknown_fields(&["alias", "accountId", "role"], &omit_fields);
+            if !unknown.is_empty() {
+                return Err(Error::UnknownOmitFields(unknown.join(", ")));
+            }
 
             match formatting.output {
                 crate::cmd::OutputFormat::Json => {

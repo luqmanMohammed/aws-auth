@@ -110,6 +110,8 @@ pub struct CommonArgs {
     pub config_dir: Option<PathBuf>,
 
     /// Force new credential retrieval instead of using cached credentials
+    /// Discards the SSO client registration too, so this starts a new device
+    /// authorization rather than only refetching role credentials
     /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
@@ -138,7 +140,7 @@ pub enum Commands {
         sso_start_url: Option<String>,
 
         /// AWS region where the SSO service is hosted (e.g., us-east-1)
-        #[arg(short = 'r', long)]
+        #[arg(long, short_alias = 'r')]
         sso_region: Option<String>,
 
         /// Maximum authentication retry attempts
@@ -148,22 +150,28 @@ pub enum Commands {
 
         /// Initial delay in seconds before first retry attempt
         /// Default: 10
-        #[arg(short, long)]
+        #[arg(long, short_alias = 'i')]
         initial_delay_seconds: Option<u64>,
 
         /// Interval in seconds between retry attempts
         /// Default: 5
-        #[arg(short = 't', long)]
+        #[arg(long, short_alias = 't')]
         retry_interval_seconds: Option<u64>,
 
         /// Custom directory to store the AWS SSO configuration
+        /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
         /// Default: $HOME/.aws-auth
-        #[arg(short, long)]
+        #[arg(short = ARG_SHORT_CONFIG_DIR, short_alias = 'c', long, env = "AWS_AUTH_CONFIG_DIR")]
         config_dir: Option<PathBuf>,
 
         /// Recreate configuration directory if it already exists
         /// Default: false (preserve existing configuration)
-        #[arg(short = 'R', long, conflicts_with = "update", default_value_t = false)]
+        #[arg(
+            long,
+            short_alias = 'R',
+            conflicts_with = "update",
+            default_value_t = false
+        )]
         recreate: bool,
 
         /// Update existing configuration if it already exists
@@ -194,6 +202,11 @@ pub enum Commands {
         /// Default: 7200 (2 hour)
         #[arg(short = 'D', long)]
         create_token_lock_decay_seconds: Option<u64>,
+
+        /// Never try to open a browser during device authorization
+        /// Prints the verification URL instead, for hosts with no browser of their own
+        #[arg(long)]
+        no_browser: Option<bool>,
     },
 
     #[clap(flatten)]
@@ -271,10 +284,10 @@ pub enum CoreCommands {
         #[arg(long)]
         eks_cache_dir: Option<PathBuf>,
 
-        /// Token expiration time in seconds
-        /// Default: 900 seconds (15 minutes)
-        #[arg(long)]
-        eks_expiry_seconds: Option<usize>,
+        /// Token expiration time in seconds (1 to 604800, the AWS signing maximum)
+        /// Default: 860 seconds
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=604_800))]
+        eks_expiry_seconds: Option<u64>,
     },
 
     /// Output AWS environment variables for credential access
@@ -412,6 +425,8 @@ pub struct SsoCommonArgs {
     pub config_dir: Option<PathBuf>,
 
     /// Force new credential retrieval instead of using cached credentials
+    /// Discards the SSO client registration too, so this starts a new device
+    /// authorization rather than only refetching role credentials
     /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
@@ -456,9 +471,9 @@ pub struct BatchCommonArgs {
     #[arg(short = ARG_SHORT_ACCOUNT, long, value_delimiter = ',')]
     pub account_ids: Option<Vec<String>>,
 
-    /// IAM roles to attempt in priority order
+    /// IAM roles to attempt in priority order (comma-separated list)
     /// First successful role will be used for operations
-    #[arg(short = ARG_SHORT_ROLE, long)]
+    #[arg(short = ARG_SHORT_ROLE, long, value_delimiter = ',')]
     pub role_order: Option<Vec<String>>,
 
     /// Target accounts by configured aliases (comma-separated list)
@@ -474,9 +489,9 @@ pub struct BatchCommonArgs {
     #[arg(short = ARG_SHORT_REGION, long, default_value_t=String::from("eu-west-2"))]
     pub region: String,
 
-    /// Number of concurrent operations to perform
+    /// Number of concurrent operations to perform (at least 1)
     /// Default: 1 (sequential processing)
-    #[arg(short = 'p', long, default_value_t = 1)]
+    #[arg(short = 'p', long, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
     pub parallel: usize,
 
     /// Custom directory for storing SSO authentication tokens
@@ -491,6 +506,8 @@ pub struct BatchCommonArgs {
     pub config_dir: Option<PathBuf>,
 
     /// Force new credential retrieval instead of using cached credentials
+    /// Discards the SSO client registration too, so this starts a new device
+    /// authorization rather than only refetching role credentials
     /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
@@ -534,5 +551,42 @@ impl Batch {
         match self {
             Batch::Exec { batch_common, .. } => batch_common,
         }
+    }
+}
+
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn twelve_digit_account_ids_are_accepted() {
+        assert_eq!(validate_account_id("111111111111").unwrap(), "111111111111");
+        assert_eq!(validate_account_id("000000000000").unwrap(), "000000000000");
+    }
+
+    #[test]
+    fn the_wrong_length_is_rejected() {
+        assert!(validate_account_id("11111111111").is_err(), "eleven digits");
+        assert!(
+            validate_account_id("1111111111111").is_err(),
+            "thirteen digits"
+        );
+        assert!(validate_account_id("").is_err(), "empty");
+    }
+
+    #[test]
+    fn non_digits_are_rejected() {
+        assert!(validate_account_id("11111111111a").is_err());
+        assert!(validate_account_id("1111 11111111").is_err());
+        assert!(validate_account_id("-11111111111").is_err());
+    }
+
+    #[test]
+    fn the_command_line_definition_is_valid() {
+        // clap panics at runtime on a malformed definition, such as two arguments sharing a
+        // short flag, so this asserts the whole tree is well formed.
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
     }
 }

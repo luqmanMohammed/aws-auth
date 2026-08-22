@@ -12,6 +12,10 @@ pub enum Error {
     InvalidConfig(#[from] serde_json::Error),
     #[error("Config file not found at {:?}: {}. Run `aws-auth init --help` to get help initializing config", .0, .1)]
     ConfigNotFound(PathBuf, std::io::Error),
+    #[error("Config contains an out of range duration: {0}")]
+    DurationOutOfRange(#[from] chrono::OutOfRangeError),
+    #[error("Could not determine a home directory to hold the config; pass --config-dir")]
+    HomeDirNotFound,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -21,7 +25,7 @@ pub struct AwsSsoConfig {
     #[serde(rename = "startURL")]
     pub start_url: String,
     #[serde(rename = "ssoRegion")]
-    pub sso_reigon: String,
+    pub sso_region: String,
     #[serde(rename = "maxAttempts", skip_serializing_if = "Option::is_none")]
     pub max_attempts: Option<usize>,
     #[serde(rename = "initialDelay", skip_serializing_if = "Option::is_none")]
@@ -38,6 +42,8 @@ pub struct AwsSsoConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub create_token_lock_decay: Option<chrono::Duration>,
+    #[serde(rename = "noBrowser", skip_serializing_if = "Option::is_none")]
+    pub no_browser: Option<bool>,
 }
 
 impl AwsSsoConfig {

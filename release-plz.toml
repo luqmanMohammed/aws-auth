@@ -1,0 +1,21 @@
+[workspace]
+# Not a library, so it is never published to a registry. Versions therefore come from
+# git tags rather than from crates.io.
+publish = false
+git_only = true
+
+# The git tag is what drives build.yaml, which builds the artifacts and creates the
+# GitHub release. Letting release-plz create the release too would mean two things
+# competing to create the same one.
+git_release_enable = false
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+
+# Conventional Commits puts feat at minor. Below 1.0 release-plz instead follows cargo's
+# compatibility rule, where minor is the breaking slot, and so demotes feat to patch.
+# Nothing depends on this crate as a library, so the spec behaviour is the one that applies.
+features_always_increment_minor = true
+
+# The changelog is written by hand, because it explains consequences that commit
+# subjects cannot, such as which changes alter behaviour for existing installs.
+changelog_update = false

@@ -1,5 +1,6 @@
-use crate::aws_sso::{AwsSsoManagerError, build_sso_mgr_cached};
+use crate::aws_sso::{AwsSsoManagerError, ConfigError, build_sso_mgr_cached};
 use crate::cmd::Sso;
+use crate::utils::formatters;
 use crate::utils::{
     formatters::{TabularFormatter, json::JsonFormatter, text::TextFormatter},
     resolve_config_dir,
@@ -7,8 +8,12 @@ use crate::utils::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Error loading config: {0}")]
+    Config(#[from] ConfigError),
     #[error("Error loading SSO accounts: {0}")]
     AwsSsoManager(Box<AwsSsoManagerError>),
+    #[error("Unknown --omit-fields value(s): {0}")]
+    UnknownOmitFields(String),
     #[error("Error formatting SSO accounts using json output: {0}")]
     JsonFormatter(#[from] serde_json::Error),
 }
@@ -22,20 +27,28 @@ impl From<AwsSsoManagerError> for Error {
 pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
     match subcommand {
         Sso::ListAccounts { common, formatting } => {
-            let config_dir = resolve_config_dir(common.config_dir.as_deref());
+            let config_dir = resolve_config_dir(common.config_dir.as_deref())?;
             let mut sso_manager =
-                build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref());
+                build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref())?;
 
             let accounts = sso_manager.list_accounts(common.ignore_cache).await?;
 
-            let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let omit_fields: Vec<&str> =
+                formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let unknown = formatters::unknown_fields(
+                &["accountId", "accountName", "accountEmail"],
+                &omit_fields,
+            );
+            if !unknown.is_empty() {
+                return Err(Error::UnknownOmitFields(unknown.join(", ")));
+            }
             let accounts = accounts
                 .iter()
                 .map(|account| {
                     [
-                        account.account_id().unwrap(),
-                        account.account_name().unwrap(),
-                        account.email_address().unwrap(),
+                        account.account_id().unwrap_or_default(),
+                        account.account_name().unwrap_or_default(),
+                        account.email_address().unwrap_or_default(),
                     ]
                 })
                 .collect::<Vec<_>>();
@@ -63,18 +76,28 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
             account,
             formatting,
         } => {
-            let config_dir = resolve_config_dir(common.config_dir.as_deref());
+            let config_dir = resolve_config_dir(common.config_dir.as_deref())?;
             let mut sso_manager =
-                build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref());
+                build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref())?;
 
             let roles = sso_manager
                 .list_account_roles(&account, common.ignore_cache)
                 .await?;
 
-            let omit_fields = formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let omit_fields: Vec<&str> =
+                formatting.omit_fields.iter().map(|v| v.as_str()).collect();
+            let unknown = formatters::unknown_fields(&["accountId", "roleName"], &omit_fields);
+            if !unknown.is_empty() {
+                return Err(Error::UnknownOmitFields(unknown.join(", ")));
+            }
             let roles = roles
                 .iter()
-                .map(|role| [role.account_id().unwrap(), role.role_name().unwrap()])
+                .map(|role| {
+                    [
+                        role.account_id().unwrap_or_default(),
+                        role.role_name().unwrap_or_default(),
+                    ]
+                })
                 .collect::<Vec<_>>();
 
             match formatting.output {
