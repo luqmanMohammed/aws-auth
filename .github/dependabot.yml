@@ -6,9 +6,8 @@ updates:
       interval: weekly
       day: monday
     commit-message:
-      # `build` maps to a patch release in .releaserc.json / release-plz. Without an
-      # explicit prefix the commit carries no conventional type and would not count
-      # towards a release at all.
+      # `build` maps to a patch release in release-plz. Without an explicit prefix the
+      # commit carries no conventional type and would not count towards a release at all.
       prefix: build
       include: scope
     open-pull-requests-limit: 5

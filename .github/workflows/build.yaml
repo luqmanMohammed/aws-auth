@@ -30,6 +30,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # Before anything is built, so a tag that disagrees with the manifest cannot produce
+      # artifacts reporting the wrong version.
+      - name: Check the tag matches Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! grep -q "^version = \"$version\"\$" Cargo.toml; then
+            echo "tag $GITHUB_REF_NAME expects version $version, but Cargo.toml says:" >&2
+            grep -m1 '^version' Cargo.toml >&2
+            exit 1
+          fi
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
