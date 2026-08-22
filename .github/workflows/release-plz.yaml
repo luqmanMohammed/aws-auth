@@ -5,9 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
+# Every write goes through the app token below, not through this one.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+
 jobs:
   release-pr:
     name: Release PR
@@ -17,10 +19,21 @@ jobs:
       group: release-plz-pr
       cancel-in-progress: false
     steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - uses: actions/checkout@v7
         with:
           # release-plz needs the full history to find the previous tag.
           fetch-depth: 0
+          # Also what the branch push is authenticated with, since checkout is what
+          # leaves credentials behind for git.
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -28,7 +41,7 @@ jobs:
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
   release:
     name: Tag
@@ -38,9 +51,20 @@ jobs:
       group: release-plz-tag
       cancel-in-progress: false
     steps:
+      # The tag has to be pushed by the app rather than by GITHUB_TOKEN. GitHub does not
+      # start workflow runs for pushes made with GITHUB_TOKEN, so a tag pushed with it
+      # would never reach build.yaml and the release would never be built.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -50,4 +74,4 @@ jobs:
         with:
           command: release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
