@@ -1,7 +1,6 @@
 use crate::aws_sso::config::UnverifiedSsoConfig;
 use crate::utils::private_fs;
 use crate::utils::resolve_config_dir;
-use std::fs::File;
 use std::path::PathBuf;
 
 // Directories relative to the config directory
@@ -106,9 +105,9 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         );
     }
 
-    let config_file = File::create(&config_file)?;
-    serde_json::to_writer_pretty(config_file, &sso_config)
+    let contents = serde_json::to_vec_pretty(&sso_config)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+    private_fs::write_atomic(&config_file, &contents)?;
     eprintln!(
         "INFO: Successfully initialized/updated configuration in {}",
         config_dir.display()
