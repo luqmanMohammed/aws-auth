@@ -205,7 +205,8 @@ pub enum Commands {
 
         /// Never try to open a browser during device authorization
         /// Prints the verification URL instead, for hosts with no browser of their own
-        #[arg(long)]
+        /// Pass --no-browser false to turn it back off; omitting it leaves the stored value alone
+        #[arg(long, num_args = 0..=1, default_missing_value = "true")]
         no_browser: Option<bool>,
     },
 
