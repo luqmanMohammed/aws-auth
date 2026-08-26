@@ -14,17 +14,17 @@ use aws_sdk_ssooidc::operation::start_device_authorization::StartDeviceAuthoriza
 use aws_sdk_ssooidc::{Client as OidcClient, config::Credentials};
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_runtime_api::http::Response;
-use chrono::{DateTime, Duration, Utc};
-use std::time::UNIX_EPOCH;
+use chrono::{DateTime, TimeDelta, Utc};
+use std::time::{Duration, UNIX_EPOCH};
 
 const OIDC_APP_NAME: &str = "aws-auth";
 const OIDC_CLIENT_TYPE: &str = "public";
 const OIDC_SCOPE: &str = "sso:account:access";
 const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
-const DEFAULT_CREATE_TOKEN_INITIAL_DELAY: Duration = Duration::seconds(10);
-const DEFAULT_CREATE_TOKEN_RETRY_INTERVAL: Duration = Duration::seconds(5);
+const DEFAULT_CREATE_TOKEN_INITIAL_DELAY: Duration = Duration::from_secs(10);
+const DEFAULT_CREATE_TOKEN_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS: usize = 10;
-const CREATE_TOKEN_SLOW_DOWN_BACKOFF: Duration = Duration::seconds(5);
+const CREATE_TOKEN_SLOW_DOWN_BACKOFF: Duration = Duration::from_secs(5);
 const EXPECT_MESSAGE: &str = "Should be present, caller pub function assume_role asures it";
 
 #[derive(Debug)]
@@ -444,7 +444,7 @@ where
             let _ = writeln!(self.code_writer, "Open the verification URL to continue.");
         }
 
-        let device_interval = Duration::seconds(device_auth.interval as i64);
+        let device_interval = Duration::from_secs(device_auth.interval.max(0) as u64);
         let mut interval = if self.retry_interval < device_interval {
             device_interval
         } else {
@@ -454,12 +454,13 @@ where
         let max_attempts = if browser_opened {
             self.max_attempts
         } else {
-            let remaining = Duration::seconds(device_auth.expires_in as i64) - self.initial_delay;
-            let attempts = remaining.num_seconds() / interval.num_seconds().max(1);
-            self.max_attempts.max(attempts.max(0) as usize)
+            let remaining = Duration::from_secs(device_auth.expires_in.max(0) as u64)
+                .saturating_sub(self.initial_delay);
+            let attempts = remaining.as_secs() / interval.as_secs().max(1);
+            self.max_attempts.max(attempts as usize)
         };
 
-        tokio::time::sleep(self.initial_delay.to_std().unwrap_or_default()).await;
+        tokio::time::sleep(self.initial_delay).await;
 
         let mut attempts = 1;
         let create_token = loop {
@@ -494,7 +495,7 @@ where
                         }
                         break Err(err);
                     }
-                    tokio::time::sleep(interval.to_std().unwrap_or_default()).await;
+                    tokio::time::sleep(interval).await;
                     attempts += 1;
                 }
             }
@@ -504,7 +505,7 @@ where
         self.client_info.access_token = create_token.access_token;
         self.client_info.refresh_token = create_token.refresh_token;
         self.client_info.access_token_expires_at =
-            Some(Utc::now() + Duration::seconds(create_token.expires_in as i64));
+            Some(Utc::now() + TimeDelta::seconds(create_token.expires_in as i64));
         Ok(())
     }
 
@@ -532,7 +533,7 @@ where
         self.client_info.access_token = create_token.access_token;
         self.client_info.refresh_token = create_token.refresh_token;
         self.client_info.access_token_expires_at =
-            Some(Utc::now() + Duration::seconds(create_token.expires_in as i64));
+            Some(Utc::now() + TimeDelta::seconds(create_token.expires_in as i64));
         Ok(())
     }
 

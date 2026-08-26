@@ -1,4 +1,4 @@
-use crate::aws_sso::config::AwsSsoConfig;
+use crate::aws_sso::config::UnverifiedSsoConfig;
 use crate::utils::private_fs;
 use crate::utils::resolve_config_dir;
 use std::fs::File;
@@ -18,14 +18,20 @@ pub struct ExecInitInputs {
     pub initial_delay: Option<std::time::Duration>,
     pub retry_interval: Option<std::time::Duration>,
     pub create_token_retry_threshold: Option<u64>,
-    pub create_token_lock_decay: Option<chrono::Duration>,
+    pub create_token_lock_decay: Option<chrono::TimeDelta>,
     pub no_browser: Option<bool>,
 }
 
-#[derive(Debug, serde::Serialize)]
-struct InitConfig {
-    #[serde(flatten)]
-    sso_config: AwsSsoConfig,
+fn override_with<T>(field: &mut T, value: Option<T>) {
+    if let Some(value) = value {
+        *field = value;
+    }
+}
+
+fn override_opt<T>(field: &mut Option<T>, value: Option<T>) {
+    if value.is_some() {
+        *field = value;
+    }
 }
 
 pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
@@ -48,53 +54,39 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         ));
     }
 
-    let sso_config = if exec_inputs.update && config_dir_exists {
-        let mut sso_config = AwsSsoConfig::load_config(&config_file)
+    let mut sso_config = if exec_inputs.update && config_dir_exists {
+        let mut sso_config = UnverifiedSsoConfig::from_config_file(&config_file)
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
-        if let Some(start_url) = exec_inputs.sso_start_url {
-            sso_config.start_url = start_url;
-        }
-        if let Some(sso_region) = exec_inputs.sso_region {
-            sso_config.sso_region = sso_region;
-        }
-        if let Some(max_attempts) = exec_inputs.max_attempts {
-            sso_config.max_attempts = Some(max_attempts);
-        }
-        if let Some(initial_delay) = exec_inputs.initial_delay {
-            sso_config.initial_delay = Some(initial_delay);
-        }
-        if let Some(retry_interval) = exec_inputs.retry_interval {
-            sso_config.retry_interval = Some(retry_interval);
-        }
-        if let Some(create_token_retry_threshold) = exec_inputs.create_token_retry_threshold {
-            sso_config.create_token_retry_threshold = Some(create_token_retry_threshold);
-        }
-        if let Some(create_token_lock_decay) = exec_inputs.create_token_lock_decay {
-            sso_config.create_token_lock_decay = Some(create_token_lock_decay);
-        }
-        if let Some(no_browser) = exec_inputs.no_browser {
-            sso_config.no_browser = Some(no_browser);
-        }
+        override_with(&mut sso_config.start_url, exec_inputs.sso_start_url);
+        override_with(&mut sso_config.sso_region, exec_inputs.sso_region);
         sso_config
     } else if let (Some(start_url), Some(sso_region)) =
         (exec_inputs.sso_start_url, exec_inputs.sso_region)
     {
-        AwsSsoConfig {
-            start_url,
-            sso_region,
-            max_attempts: exec_inputs.max_attempts,
-            initial_delay: exec_inputs.initial_delay,
-            retry_interval: exec_inputs.retry_interval,
-            create_token_retry_threshold: exec_inputs.create_token_retry_threshold,
-            create_token_lock_decay: exec_inputs.create_token_lock_decay,
-            no_browser: exec_inputs.no_browser,
-        }
+        UnverifiedSsoConfig::new(start_url, sso_region)
     } else {
-        Err(std::io::Error::new(
+        return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "--sso-start-url and --sso-region are required when not updating.",
-        ))?
+        ));
     };
+
+    override_opt(&mut sso_config.max_attempts, exec_inputs.max_attempts);
+    override_opt(&mut sso_config.initial_delay, exec_inputs.initial_delay);
+    override_opt(&mut sso_config.retry_interval, exec_inputs.retry_interval);
+    override_opt(
+        &mut sso_config.create_token_retry_threshold,
+        exec_inputs.create_token_retry_threshold,
+    );
+    override_opt(
+        &mut sso_config.create_token_lock_decay,
+        exec_inputs.create_token_lock_decay,
+    );
+    override_opt(&mut sso_config.no_browser, exec_inputs.no_browser);
+
+    let sso_config = sso_config
+        .verify()
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
 
     if !config_dir_exists || exec_inputs.recreate {
         if config_dir_exists && exec_inputs.recreate {
@@ -115,7 +107,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
     }
 
     let config_file = File::create(&config_file)?;
-    serde_json::to_writer_pretty(config_file, &InitConfig { sso_config })
+    serde_json::to_writer_pretty(config_file, &sso_config)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
     eprintln!(
         "INFO: Successfully initialized/updated configuration in {}",
@@ -128,6 +120,7 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::aws_sso::config::AwsSsoConfig;
     use crate::utils::test_support::TempDir;
     use std::path::{Path, PathBuf};
 
@@ -159,8 +152,10 @@ mod tests {
     }
 
     fn config_at(config_dir: &Path) -> AwsSsoConfig {
-        AwsSsoConfig::load_config(&config_dir.join("config.json"))
+        UnverifiedSsoConfig::from_config_file(&config_dir.join("config.json"))
             .expect("config should be readable")
+            .verify()
+            .expect("a written config should be valid")
     }
 
     #[test]
@@ -177,8 +172,8 @@ mod tests {
             );
         }
         let config = config_at(&config_dir);
-        assert_eq!(config.start_url, "https://a.awsapps.com/start");
-        assert_eq!(config.sso_region, "eu-west-2");
+        assert_eq!(config.start_url(), "https://a.awsapps.com/start");
+        assert_eq!(config.sso_region(), "eu-west-2");
     }
 
     #[test]
@@ -209,7 +204,7 @@ mod tests {
         exec_init(args).expect("a dry run reports success");
 
         assert_eq!(
-            config_at(&config_dir).sso_region,
+            config_at(&config_dir).sso_region(),
             "eu-west-2",
             "without --update or --recreate nothing changes"
         );
@@ -226,9 +221,10 @@ mod tests {
         exec_init(args).expect("update should succeed");
 
         let config = config_at(&config_dir);
-        assert_eq!(config.sso_region, "us-east-1", "the region was replaced");
+        assert_eq!(config.sso_region(), "us-east-1", "the region was replaced");
         assert_eq!(
-            config.start_url, "https://a.awsapps.com/start",
+            config.start_url(),
+            "https://a.awsapps.com/start",
             "the untouched value survives"
         );
     }
@@ -246,9 +242,39 @@ mod tests {
         exec_init(args).expect("update should succeed");
 
         let config = config_at(&config_dir);
-        assert_eq!(config.max_attempts, Some(7));
-        assert_eq!(config.create_token_retry_threshold, Some(3));
-        assert_eq!(config.no_browser, Some(true));
+        assert_eq!(config.max_attempts(), Some(7));
+        assert_eq!(config.create_token_retry_threshold(), 3);
+        assert!(config.no_browser());
+    }
+
+    #[test]
+    fn a_zero_max_attempts_is_rejected_before_anything_is_written() {
+        let dir = TempDir::new("init-zero-attempts");
+        let config_dir = dir.join("cfg");
+
+        let mut args = inputs(&config_dir);
+        args.sso_start_url = Some("https://a.awsapps.com/start".to_string());
+        args.sso_region = Some("eu-west-2".to_string());
+        args.max_attempts = Some(0);
+        assert!(exec_init(args).is_err(), "zero attempts can never succeed");
+        assert!(!config_dir.exists(), "nothing should have been created");
+    }
+
+    #[test]
+    fn an_update_to_zero_max_attempts_leaves_the_config_alone() {
+        let dir = TempDir::new("init-zero-update");
+        let config_dir = created(&dir, "https://a.awsapps.com/start", "eu-west-2");
+
+        let mut args = inputs(&config_dir);
+        args.update = true;
+        args.max_attempts = Some(0);
+        assert!(exec_init(args).is_err(), "zero attempts can never succeed");
+
+        assert_eq!(
+            config_at(&config_dir).max_attempts(),
+            None,
+            "the rejected update must not have been written"
+        );
     }
 
     #[test]
@@ -265,7 +291,7 @@ mod tests {
         exec_init(args).expect("recreate should succeed");
 
         assert_eq!(
-            config_at(&config_dir).start_url,
+            config_at(&config_dir).start_url(),
             "https://b.awsapps.com/start"
         );
         assert!(!stale.exists(), "the directory was replaced");
@@ -285,7 +311,7 @@ mod tests {
 
         assert!(precious.exists(), "the cache must not have been destroyed");
         assert_eq!(
-            config_at(&config_dir).start_url,
+            config_at(&config_dir).start_url(),
             "https://a.awsapps.com/start",
             "the config must still be intact"
         );
