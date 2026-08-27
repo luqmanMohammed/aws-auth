@@ -118,12 +118,21 @@ aws-auth batch exec -r AdminRole,ReadOnly -p 8 -- aws sts get-caller-identity
 aws-auth batch exec -a 111111111111,222222222222 -r AdminRole -- aws s3 ls
 aws-auth batch exec -A prod,staging -- aws s3 ls
 aws-auth batch exec -f '^prod-' -r AdminRole -- aws s3 ls
+
+# stop dispatching accounts once one of them fails
+aws-auth batch exec -F -A prod,staging -- ./migrate.sh
 ```
 
 Each child additionally gets `AWS_ACCOUNT_ID`. Accounts that resolve under no role are
 reported on stderr, and the command fails if none resolved at all. `-o <dir>` writes
 per-account `*-stdout.log` / `*-stderr.log`; `-S` discards output; `-d` adds progress
 logging.
+
+**Any account whose command fails makes aws-auth exit non-zero**, and each failure is
+named on stderr — unlike `exec`, the exit status is a pass/fail for the run rather than
+a child's own code, since there are many children. `-F` / `--fail-fast` stops dispatching
+the accounts that have not started yet, reporting them as skipped; accounts already in
+flight are allowed to finish. It changes what runs, not what the run exits with.
 
 ### Output formats
 

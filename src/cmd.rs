@@ -540,9 +540,9 @@ pub enum Batch {
         #[arg(short = 'o', long)]
         output_dir: Option<PathBuf>,
 
-        /// Stop running accounts as soon as one of them fails, and exit non-zero
-        /// Without it the batch runs every account and only fails if all of them do
-        /// Accounts already in flight are allowed to finish
+        /// Stop dispatching further accounts as soon as one of them fails
+        /// Accounts already in flight are allowed to finish, the rest are reported as skipped
+        /// Any failed account exits non-zero with or without this flag
         /// Default: false
         #[arg(short = 'F', long, default_value_t = false)]
         fail_fast: bool,

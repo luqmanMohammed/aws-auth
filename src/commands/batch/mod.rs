@@ -244,14 +244,10 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                 eprintln!("WARN: {skipped} of {total} accounts were skipped after --fail-fast");
             }
 
-            // Without --fail-fast a partial failure is routine, so only a batch where nothing
-            // succeeded is worth a non-zero exit.
-            let give_up = if fail_fast {
-                failed > 0
-            } else {
-                failed > 0 && failed == total
-            };
-            if give_up {
+            // --fail-fast decides only whether the remaining accounts still run. Making it decide
+            // the exit status too would leave that status depending on how many accounts were
+            // targeted, which is the one thing a caller in a `set -e` script cannot work around.
+            if failed > 0 {
                 return Err(Error::JobsFailed { failed, total });
             }
         }
