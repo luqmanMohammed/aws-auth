@@ -60,9 +60,8 @@ pub mod json_alias_provider {
             }
         }
         fn save_aliases(&self) -> io::Result<()> {
-            let file = File::create(&self.file_path)?;
-            serde_json::to_writer(file, &self.aliases)?;
-            Ok(())
+            let contents = serde_json::to_vec(&self.aliases)?;
+            crate::utils::private_fs::write_atomic(&self.file_path, &contents)
         }
     }
 

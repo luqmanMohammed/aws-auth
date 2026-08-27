@@ -2,7 +2,7 @@ mod exec;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::utils::worker::ThreadPool;
+use crate::utils::worker::{JobError, ThreadPool};
 use aws_sdk_ssooidc::config::Credentials;
 use exec::ExecJob;
 use regex::Regex;
@@ -39,11 +39,25 @@ pub enum Error {
     NoAccountsTargeted,
     #[error("Could not resolve credentials for any of the {0} targeted accounts")]
     NoCredentialsResolved(usize),
+    #[error("{failed} of {total} accounts failed")]
+    JobsFailed { failed: usize, total: usize },
 }
 
 impl From<AwsSsoManagerError> for Error {
     fn from(value: AwsSsoManagerError) -> Self {
         Self::AwsSso(Box::new(value))
+    }
+}
+
+/// Any failed account fails the run, so the exit status does not depend on how many accounts
+/// were targeted -- the one thing a caller in a `set -e` script cannot work around.
+/// `--allow-partial` is the only way to ask for the weaker rule, where a run counts as a failure
+/// only when nothing at all worked.
+fn run_failed(failed: usize, total: usize, allow_partial: bool) -> bool {
+    if allow_partial {
+        failed > 0 && failed == total
+    } else {
+        failed > 0
     }
 }
 
@@ -67,19 +81,26 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
         batch_common.aliases
     {
         alias_provider.load_aliases()?;
-        aliases
-            .iter()
-            .filter_map(|alias| {
-                if let Ok(Some(assume_identity)) = alias_provider.get_alias(alias) {
-                    Some((
-                        assume_identity.account.to_string(),
-                        assume_identity.role.to_string(),
-                    ))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
+        let mut resolved = Vec::with_capacity(aliases.len());
+        let mut unknown: Vec<&str> = Vec::new();
+        for alias in aliases {
+            match alias_provider.get_alias(alias)? {
+                Some(assume_identity) => resolved.push((
+                    assume_identity.account.to_string(),
+                    assume_identity.role.to_string(),
+                )),
+                None => unknown.push(alias),
+            }
+        }
+        if !unknown.is_empty() {
+            eprintln!(
+                "WARN: {} of {} aliases did not resolve to an account and were skipped: {}",
+                unknown.len(),
+                aliases.len(),
+                unknown.join(", ")
+            );
+        }
+        resolved
     } else {
         let role_order = batch_common
             .role_order
@@ -193,6 +214,8 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
             arguments,
             suppress_output,
             output_dir,
+            fail_fast,
+            allow_partial,
             batch_common,
         } => {
             let arguments: Arc<[String]> = Arc::from(arguments.into_boxed_slice());
@@ -200,7 +223,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                 .first()
                 .ok_or(Error::MissingRequiredArg("Missing program".to_string()))?;
             let worker_pool: ThreadPool<ExecJob> =
-                ThreadPool::new(batch_common.parallel, batch_common.debug);
+                ThreadPool::new(batch_common.parallel, batch_common.debug, fail_fast);
             let output_dir = output_dir.map(Arc::new);
             let region = Arc::new(batch_common.region);
             for (account_id, credentials) in credentials_map {
@@ -213,10 +236,66 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                     region: region.clone(),
                 });
             }
-            let result = worker_pool.wait();
-            elog!(batch_common.debug, "{result:?}");
+
+            let results = worker_pool.wait();
+            elog!(batch_common.debug, "{results:?}");
+
+            let total = results.len();
+            let mut failed = 0;
+            let mut skipped = 0;
+            for job in &results {
+                match &job.result {
+                    Ok(_) => {}
+                    Err(JobError::Skipped) => skipped += 1,
+                    Err(err) => {
+                        failed += 1;
+                        eprintln!("WARN: account {} failed: {err}", job.job_id);
+                    }
+                }
+            }
+            if skipped > 0 {
+                eprintln!("WARN: {skipped} of {total} accounts were skipped after --fail-fast");
+            }
+
+            if run_failed(failed, total, allow_partial) {
+                return Err(Error::JobsFailed { failed, total });
+            }
         }
     }
 
     Ok(())
+}
+
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
+#[cfg(test)]
+mod tests {
+    use super::run_failed;
+
+    #[test]
+    fn one_failure_among_many_fails_the_run_by_default() {
+        assert!(run_failed(1, 10, false));
+        assert!(run_failed(10, 10, false));
+    }
+
+    #[test]
+    fn a_run_with_nothing_failing_succeeds() {
+        assert!(!run_failed(0, 10, false));
+        assert!(!run_failed(0, 10, true));
+        assert!(!run_failed(0, 0, true), "no accounts is not a failure");
+    }
+
+    #[test]
+    fn allow_partial_only_fails_when_every_account_failed() {
+        assert!(!run_failed(9, 10, true), "one survivor is enough");
+        assert!(run_failed(10, 10, true), "nothing worked");
+    }
+
+    #[test]
+    fn the_default_does_not_depend_on_how_many_accounts_were_targeted() {
+        // The rule --allow-partial opts out of: without it, the same broken command must not
+        // report success just because it was pointed at more accounts.
+        for total in 1..20 {
+            assert!(run_failed(1, total, false), "1 of {total} failed");
+        }
+    }
 }

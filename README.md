@@ -69,6 +69,14 @@ Every credential-taking command accepts either `-a <account-id> -r <role>` or
 
 `--help` on any subcommand lists the rest.
 
+A short flag means the same long flag in every command, so `-o` is always `--output` and
+never `--output-dir`. Where two names want the same letter the second takes the uppercase
+form — `-a`/`-A` account/alias, `-r`/`-R` role/region, `-c`/`-C` cluster/config-dir,
+`-o`/`-O` output/omit-fields, `-f`/`-F` filter/fail-fast, `-d`/`-D` debug/output-dir,
+`-p`/`-P` parallel/allow-partial. The
+list forms `batch` takes share the letter of their singular, so `-a` is `--account-ids`
+there. `init` configures a machine once and is long-only apart from `-C`.
+
 ### eval
 
 ```sh
@@ -118,16 +126,32 @@ aws-auth batch exec -r AdminRole,ReadOnly -p 8 -- aws sts get-caller-identity
 aws-auth batch exec -a 111111111111,222222222222 -r AdminRole -- aws s3 ls
 aws-auth batch exec -A prod,staging -- aws s3 ls
 aws-auth batch exec -f '^prod-' -r AdminRole -- aws s3 ls
+
+# stop dispatching accounts once one of them fails
+aws-auth batch exec -F -A prod,staging -- ./migrate.sh
 ```
 
 Each child additionally gets `AWS_ACCOUNT_ID`. Accounts that resolve under no role are
-reported on stderr, and the command fails if none resolved at all. `-o <dir>` writes
-per-account `*-stdout.log` / `*-stderr.log`; `-S` discards output; `-d` adds progress
+reported on stderr, and the command fails if none resolved at all. `-D <dir>` writes
+per-account `*-stdout.log` / `*-stderr.log`; `-s` discards output; `-d` adds progress
 logging.
+
+**Any account whose command fails makes aws-auth exit non-zero**, and each failure is
+named on stderr — unlike `exec`, the exit status is a pass/fail for the run rather than
+a child's own code, since there are many children. Two flags adjust that, and they are
+mutually exclusive:
+
+| Flag | Meaning |
+| --- | --- |
+| `-F`, `--fail-fast` | Stop dispatching accounts that have not started yet, reporting them as skipped. Accounts already in flight are allowed to finish. Changes what runs, not what the run exits with |
+| `-P`, `--allow-partial` | Exit 0 as long as one account succeeded. Only a run in which every account failed is a failure |
+
+Without `--allow-partial` the status does not depend on how many accounts you targeted,
+so the same broken command cannot pass simply by being pointed at more of them.
 
 ### Output formats
 
-`alias list`, `sso list-accounts` and `sso list-account-roles` take `-F json|text`,
+`alias list`, `sso list-accounts` and `sso list-account-roles` take `-o json|text`,
 `-H` to drop headers, and `-O` to omit columns. Column names are matched ignoring case
 and spaces, so `-O accountId`, `-O "Account Id"` and `-O accountid` are equivalent, and
 an unrecognised name is an error rather than being ignored.
@@ -149,8 +173,10 @@ an unrecognised name is an error rather than being ignored.
 }
 ```
 
-Only `startURL` and `ssoRegion` are required. Set any of them with
-`aws-auth init --update`, for example:
+Only `startURL` and `ssoRegion` are required, and they must be non-empty. `maxAttempts`
+must be at least 1. `createTokenLockDecay` may not be negative — use `0` to keep a lock
+until `aws-auth unlock` clears it. An invalid value is rejected on load rather than
+silently ignored. Set any of them with `aws-auth init --update`, for example:
 
 ```sh
 aws-auth init --update --max-attempts 20 --no-browser true

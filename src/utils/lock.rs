@@ -1,3 +1,4 @@
+use crate::utils::private_fs;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -29,6 +30,7 @@ pub trait CounterLockProvider {
     type Error: std::error::Error;
     fn load_lock(&mut self) -> Result<(), Self::Error>;
     fn save_lock(&self) -> Result<(), Self::Error>;
+    fn discard_lock(&self) -> Result<(), Self::Error>;
     fn get_lock(&self) -> &CounterLock;
     fn get_lock_mut(&mut self) -> &mut CounterLock;
 }
@@ -60,42 +62,53 @@ impl CounterLockProvider for DecayingJsonCounterLockProvider {
     type Error = std::io::Error;
 
     fn load_lock(&mut self) -> Result<(), Self::Error> {
-        let lock_path = &self.lock_path;
-        if lock_path.exists() {
-            let file = std::fs::File::open(lock_path)?;
-            let mut lock: CounterLock = serde_json::from_reader(file)?;
-            let mut save_lock = false;
-            if let Some((ldd, la)) = self.lock_decay_duration.zip(lock.locked_at)
-                && Utc::now() >= la + ldd
-            {
-                lock = CounterLock {
+        // Opened without checking for existence first so a file removed underneath us is the
+        // same case as one that was never there, rather than a NotFound the caller must handle.
+        let file = match std::fs::File::open(&self.lock_path) {
+            Ok(file) => file,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                self.lock = Some(CounterLock {
                     threshold: self.threshold,
                     count: 0,
                     locked_at: None,
-                };
-                save_lock = true;
+                });
+                return Ok(());
             }
-            lock.threshold = self.threshold;
-            self.lock = Some(lock);
-            if save_lock {
-                self.save_lock()?
-            }
-        } else {
-            self.lock = Some(CounterLock {
+            Err(err) => return Err(err),
+        };
+
+        let mut lock: CounterLock = serde_json::from_reader(file)?;
+        let mut save_lock = false;
+        if let Some((ldd, la)) = self.lock_decay_duration.zip(lock.locked_at)
+            && Utc::now() >= la + ldd
+        {
+            lock = CounterLock {
                 threshold: self.threshold,
                 count: 0,
                 locked_at: None,
-            });
+            };
+            save_lock = true;
+        }
+        lock.threshold = self.threshold;
+        self.lock = Some(lock);
+        if save_lock {
+            self.save_lock()?
         }
         Ok(())
     }
 
     fn save_lock(&self) -> Result<(), Self::Error> {
         if let Some(ref lock) = self.lock {
-            let file = std::fs::File::create(&self.lock_path)?;
-            serde_json::to_writer(file, lock)?;
+            private_fs::write_atomic(&self.lock_path, &serde_json::to_vec(lock)?)?;
         }
         Ok(())
+    }
+
+    fn discard_lock(&self) -> Result<(), Self::Error> {
+        match std::fs::remove_file(&self.lock_path) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err),
+            _ => Ok(()),
+        }
     }
 
     fn get_lock(&self) -> &CounterLock {
@@ -243,6 +256,43 @@ mod tests {
             !fresh.get_lock().is_locked(),
             "the cleared state should have been saved"
         );
+    }
+
+    #[test]
+    fn an_unparseable_lock_reports_a_kind_the_unlock_command_recovers_from() {
+        let dir = TempDir::new("lock-corrupt");
+        std::fs::write(dir.join("l.json"), b"not json").unwrap();
+        let mut provider = DecayingJsonCounterLockProvider::new(dir.path(), "l", 1, None);
+
+        let kind = provider
+            .load_lock()
+            .expect_err("parsing should fail")
+            .kind();
+
+        assert!(
+            matches!(
+                kind,
+                std::io::ErrorKind::InvalidData | std::io::ErrorKind::UnexpectedEof
+            ),
+            "exec_unlock matches on these two kinds to clear the file, got {kind:?}"
+        );
+    }
+
+    #[test]
+    fn discarding_removes_the_file_and_tolerates_a_missing_one() {
+        let dir = TempDir::new("lock-discard");
+        let mut provider = DecayingJsonCounterLockProvider::new(dir.path(), "l", 1, None);
+        provider.load_lock().unwrap();
+        provider.get_lock_mut().increment(1);
+        provider.save_lock().unwrap();
+        assert!(dir.join("l.json").exists(), "precondition");
+
+        provider.discard_lock().expect("the file should be removed");
+        assert!(!dir.join("l.json").exists());
+
+        provider
+            .discard_lock()
+            .expect("a missing lock is not an error");
     }
 
     #[test]
