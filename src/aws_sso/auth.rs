@@ -481,15 +481,28 @@ where
             {
                 Ok(token) => break Ok(token),
                 Err(err) => {
-                    match err.as_service_error() {
-                        Some(CreateTokenError::AuthorizationPendingException(_)) => {}
+                    let reached_endpoint = match err.as_service_error() {
+                        Some(CreateTokenError::AuthorizationPendingException(_)) => true,
                         Some(CreateTokenError::SlowDownException(_)) => {
                             interval += CREATE_TOKEN_SLOW_DOWN_BACKOFF;
+                            true
+                        }
+                        // A request that never landed carries no verdict on the device code, and
+                        // the window here is long enough that a dropped network is expected, so
+                        // it is polled through rather than ending someone's login.
+                        None if matches!(
+                            &err,
+                            SdkError::DispatchFailure(_) | SdkError::TimeoutError(_)
+                        ) =>
+                        {
+                            false
                         }
                         _ => break Err(err),
-                    }
+                    };
                     if attempts >= max_attempts {
-                        if let Some(ref mut lock) = self.upstream_lock {
+                        // Only a round that actually reached AWS is evidence of the repeated
+                        // authorizations the lock exists to slow down.
+                        if reached_endpoint && let Some(ref mut lock) = self.upstream_lock {
                             lock.get_lock_mut().increment(1);
                             lock.save_lock().map_err(Error::LockProvider)?;
                         }
