@@ -62,32 +62,37 @@ impl CounterLockProvider for DecayingJsonCounterLockProvider {
     type Error = std::io::Error;
 
     fn load_lock(&mut self) -> Result<(), Self::Error> {
-        let lock_path = &self.lock_path;
-        if lock_path.exists() {
-            let file = std::fs::File::open(lock_path)?;
-            let mut lock: CounterLock = serde_json::from_reader(file)?;
-            let mut save_lock = false;
-            if let Some((ldd, la)) = self.lock_decay_duration.zip(lock.locked_at)
-                && Utc::now() >= la + ldd
-            {
-                lock = CounterLock {
+        // Opened without checking for existence first so a file removed underneath us is the
+        // same case as one that was never there, rather than a NotFound the caller must handle.
+        let file = match std::fs::File::open(&self.lock_path) {
+            Ok(file) => file,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                self.lock = Some(CounterLock {
                     threshold: self.threshold,
                     count: 0,
                     locked_at: None,
-                };
-                save_lock = true;
+                });
+                return Ok(());
             }
-            lock.threshold = self.threshold;
-            self.lock = Some(lock);
-            if save_lock {
-                self.save_lock()?
-            }
-        } else {
-            self.lock = Some(CounterLock {
+            Err(err) => return Err(err),
+        };
+
+        let mut lock: CounterLock = serde_json::from_reader(file)?;
+        let mut save_lock = false;
+        if let Some((ldd, la)) = self.lock_decay_duration.zip(lock.locked_at)
+            && Utc::now() >= la + ldd
+        {
+            lock = CounterLock {
                 threshold: self.threshold,
                 count: 0,
                 locked_at: None,
-            });
+            };
+            save_lock = true;
+        }
+        lock.threshold = self.threshold;
+        self.lock = Some(lock);
+        if save_lock {
+            self.save_lock()?
         }
         Ok(())
     }

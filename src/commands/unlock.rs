@@ -20,19 +20,16 @@ pub fn exec_unlock(config_dir: Option<&Path>) -> Result<(), Error> {
     let config =
         UnverifiedSsoConfig::from_config_file(&config_dir.join("config.json"))?.verify()?;
 
+    let threshold = config.create_token_retry_threshold();
+    if threshold == 0 {
+        eprintln!("INFO: Locking is not enabled.");
+        return Ok(());
+    }
+
     for lock_name in LOCK_NAMES {
-        let mut lock_provider = LockProvider::new(
-            &config_dir,
-            lock_name,
-            config.create_token_retry_threshold(),
-            None,
-        );
+        let mut lock_provider = LockProvider::new(&config_dir, lock_name, threshold, None);
         if let Err(err) = lock_provider.load_lock() {
             match err.kind() {
-                std::io::ErrorKind::NotFound => {
-                    eprintln!("INFO: Locking is not enabled.");
-                    continue;
-                }
                 std::io::ErrorKind::InvalidData | std::io::ErrorKind::UnexpectedEof => {
                     lock_provider.discard_lock()?;
                     eprintln!("INFO: Lock could not be read ({err}) and has been removed.");
