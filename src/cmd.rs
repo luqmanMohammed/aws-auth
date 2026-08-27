@@ -540,6 +540,13 @@ pub enum Batch {
         #[arg(short = 'o', long)]
         output_dir: Option<PathBuf>,
 
+        /// Stop running accounts as soon as one of them fails, and exit non-zero
+        /// Without it the batch runs every account and only fails if all of them do
+        /// Accounts already in flight are allowed to finish
+        /// Default: false
+        #[arg(short = 'F', long, default_value_t = false)]
+        fail_fast: bool,
+
         /// Command and arguments to execute
         /// Must be provided after -- separator
         /// Example: aws-auth batch exec -A prod-account -- aws s3 ls

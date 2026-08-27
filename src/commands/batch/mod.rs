@@ -2,7 +2,7 @@ mod exec;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::utils::worker::ThreadPool;
+use crate::utils::worker::{JobError, ThreadPool};
 use aws_sdk_ssooidc::config::Credentials;
 use exec::ExecJob;
 use regex::Regex;
@@ -39,6 +39,8 @@ pub enum Error {
     NoAccountsTargeted,
     #[error("Could not resolve credentials for any of the {0} targeted accounts")]
     NoCredentialsResolved(usize),
+    #[error("{failed} of {total} accounts failed")]
+    JobsFailed { failed: usize, total: usize },
 }
 
 impl From<AwsSsoManagerError> for Error {
@@ -67,19 +69,26 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
         batch_common.aliases
     {
         alias_provider.load_aliases()?;
-        aliases
-            .iter()
-            .filter_map(|alias| {
-                if let Ok(Some(assume_identity)) = alias_provider.get_alias(alias) {
-                    Some((
-                        assume_identity.account.to_string(),
-                        assume_identity.role.to_string(),
-                    ))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
+        let mut resolved = Vec::with_capacity(aliases.len());
+        let mut unknown: Vec<&str> = Vec::new();
+        for alias in aliases {
+            match alias_provider.get_alias(alias)? {
+                Some(assume_identity) => resolved.push((
+                    assume_identity.account.to_string(),
+                    assume_identity.role.to_string(),
+                )),
+                None => unknown.push(alias),
+            }
+        }
+        if !unknown.is_empty() {
+            eprintln!(
+                "WARN: {} of {} aliases did not resolve to an account and were skipped: {}",
+                unknown.len(),
+                aliases.len(),
+                unknown.join(", ")
+            );
+        }
+        resolved
     } else {
         let role_order = batch_common
             .role_order
@@ -193,6 +202,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
             arguments,
             suppress_output,
             output_dir,
+            fail_fast,
             batch_common,
         } => {
             let arguments: Arc<[String]> = Arc::from(arguments.into_boxed_slice());
@@ -200,7 +210,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                 .first()
                 .ok_or(Error::MissingRequiredArg("Missing program".to_string()))?;
             let worker_pool: ThreadPool<ExecJob> =
-                ThreadPool::new(batch_common.parallel, batch_common.debug);
+                ThreadPool::new(batch_common.parallel, batch_common.debug, fail_fast);
             let output_dir = output_dir.map(Arc::new);
             let region = Arc::new(batch_common.region);
             for (account_id, credentials) in credentials_map {
@@ -213,8 +223,37 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                     region: region.clone(),
                 });
             }
-            let result = worker_pool.wait();
-            elog!(batch_common.debug, "{result:?}");
+
+            let results = worker_pool.wait();
+            elog!(batch_common.debug, "{results:?}");
+
+            let total = results.len();
+            let mut failed = 0;
+            let mut skipped = 0;
+            for job in &results {
+                match &job.result {
+                    Ok(_) => {}
+                    Err(JobError::Skipped) => skipped += 1,
+                    Err(err) => {
+                        failed += 1;
+                        eprintln!("WARN: account {} failed: {err}", job.job_id);
+                    }
+                }
+            }
+            if skipped > 0 {
+                eprintln!("WARN: {skipped} of {total} accounts were skipped after --fail-fast");
+            }
+
+            // Without --fail-fast a partial failure is routine, so only a batch where nothing
+            // succeeded is worth a non-zero exit.
+            let give_up = if fail_fast {
+                failed > 0
+            } else {
+                failed > 0 && failed == total
+            };
+            if give_up {
+                return Err(Error::JobsFailed { failed, total });
+            }
         }
     }
 
