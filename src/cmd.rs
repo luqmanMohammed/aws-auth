@@ -12,17 +12,34 @@ pub struct Cli {
     pub command: Commands,
 }
 
-// Common argument short flags
+// Every short flag in the CLI is declared here and means the same long flag in every command,
+// so no argument may carry an inline `short`, a derived `short`, or a `short_alias`. The letter
+// is mnemonic for the noun in the long name, and where two nouns want the same letter the
+// second takes the uppercase form: account/alias, role/region, cluster/config-dir,
+// output/omit-fields, filter/fail-fast, debug/output-dir. `h` and `V` belong to clap. A letter
+// covers a concept, so the list forms the batch commands take share the letter of their
+// singular (--account-ids with --account, and so on).
+//
+// `init` sets a machine up once, so its own arguments are long-only; the only short it carries
+// is --config-dir, which it shares with everything else.
 const ARG_SHORT_ACCOUNT: char = 'a';
-const ARG_SHORT_ROLE: char = 'r';
 const ARG_SHORT_ALIAS: char = 'A';
+const ARG_SHORT_ROLE: char = 'r';
+const ARG_SHORT_REGION: char = 'R';
+const ARG_SHORT_CLUSTER: char = 'c';
 const ARG_SHORT_CONFIG_DIR: char = 'C';
 const ARG_SHORT_IGNORE_CACHE: char = 'i';
 const ARG_SHORT_REFRESH_STS_TOKEN: char = 't';
-const ARG_SHORT_REGION: char = 'R';
-// EKS-specific argument short flag
-const ARG_SHORT_CLUSTER: char = 'c';
-const ARG_SHORT_EVAL_OUTPUT: char = 'O';
+const ARG_SHORT_OUTPUT: char = 'o';
+const ARG_SHORT_OMIT_FIELDS: char = 'O';
+const ARG_SHORT_NO_HEADERS: char = 'H';
+const ARG_SHORT_ACCOUNT_FILTER_REGEX: char = 'f';
+const ARG_SHORT_FAIL_FAST: char = 'F';
+const ARG_SHORT_PARALLEL: char = 'p';
+const ARG_SHORT_DEBUG: char = 'd';
+const ARG_SHORT_OUTPUT_DIR: char = 'D';
+const ARG_SHORT_SUPPRESS_OUTPUT: char = 's';
+const ARG_SHORT_OVERWRITE: char = 'w';
 
 /// Defines output format options for command results
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -136,53 +153,43 @@ pub enum Commands {
     /// Default location: $HOME/.aws-auth
     Init {
         /// SSO start URL for AWS Identity Center (e.g., https://my-company.awsapps.com/start)
-        #[arg(short, long)]
+        #[arg(long)]
         sso_start_url: Option<String>,
 
         /// AWS region where the SSO service is hosted (e.g., us-east-1)
-        #[arg(long, short_alias = 'r')]
+        #[arg(long)]
         sso_region: Option<String>,
 
         /// Maximum authentication retry attempts
         /// Default: 10
-        #[arg(short, long)]
+        #[arg(long)]
         max_attempts: Option<usize>,
 
         /// Initial delay in seconds before first retry attempt
         /// Default: 10
-        #[arg(long, short_alias = 'i')]
+        #[arg(long)]
         initial_delay_seconds: Option<u64>,
 
         /// Interval in seconds between retry attempts
         /// Default: 5
-        #[arg(long, short_alias = 't')]
+        #[arg(long)]
         retry_interval_seconds: Option<u64>,
 
         /// Custom directory to store the AWS SSO configuration
         /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
         /// Default: $HOME/.aws-auth
-        #[arg(short = ARG_SHORT_CONFIG_DIR, short_alias = 'c', long, env = "AWS_AUTH_CONFIG_DIR")]
+        #[arg(short = ARG_SHORT_CONFIG_DIR, long, env = "AWS_AUTH_CONFIG_DIR")]
         config_dir: Option<PathBuf>,
 
         /// Recreate configuration directory if it already exists
         /// Default: false (preserve existing configuration)
-        #[arg(
-            long,
-            short_alias = 'R',
-            conflicts_with = "update",
-            default_value_t = false
-        )]
+        #[arg(long, conflicts_with = "update", default_value_t = false)]
         recreate: bool,
 
         /// Update existing configuration if it already exists
         /// Default: false (preserve existing configuration)
         /// This option is mutually exclusive with recreate.
-        #[arg(
-            short = 'U',
-            long,
-            conflicts_with = "recreate",
-            default_value_t = false
-        )]
+        #[arg(long, conflicts_with = "recreate", default_value_t = false)]
         update: bool,
 
         /// Threshold for creating a lock file to lock calls to create SSO token.
@@ -191,7 +198,7 @@ pub enum Commands {
         /// If locked use the aws-auth unlock command to unlock the process.
         /// Set to 0 to disable locking.
         /// Default: 5
-        #[arg(short = 'T', long)]
+        #[arg(long)]
         create_token_retry_threshold: Option<u64>,
 
         /// Automatically removes lock after decay seconds
@@ -200,7 +207,7 @@ pub enum Commands {
         /// before being automatically removed. This prevents indefinite lockouts.
         /// Set to 0 to disable lock decay.
         /// Default: 7200 (2 hour)
-        #[arg(short = 'D', long)]
+        #[arg(long)]
         create_token_lock_decay_seconds: Option<u64>,
 
         /// Never try to open a browser during device authorization
@@ -301,7 +308,7 @@ pub enum CoreCommands {
         common: CommonArgs,
 
         /// Output format
-        #[arg(long, short=ARG_SHORT_EVAL_OUTPUT, default_value_t=EvalOutputFormat::Eval)]
+        #[arg(long, short=ARG_SHORT_OUTPUT, default_value_t=EvalOutputFormat::Eval)]
         output: EvalOutputFormat,
     },
 
@@ -335,17 +342,17 @@ impl CoreCommands {
 pub struct FormatCommonArgs {
     /// Output format type
     /// Options: json, text (default: text)
-    #[arg(short = 'F', long, default_value_t = OutputFormat::Text)]
+    #[arg(short = ARG_SHORT_OUTPUT, long, default_value_t = OutputFormat::Text)]
     pub output: OutputFormat,
 
     /// Remove column headers from output
     /// Default: false (include headers)
-    #[arg(short = 'H', long, default_value_t = false)]
+    #[arg(short = ARG_SHORT_NO_HEADERS, long, default_value_t = false)]
     pub no_headers: bool,
 
     /// Fields to exclude from output
     /// Comma-separated list of field names
-    #[arg(short = 'O', long, value_delimiter = ',')]
+    #[arg(short = ARG_SHORT_OMIT_FIELDS, long, value_delimiter = ',')]
     pub omit_fields: Vec<String>,
 }
 
@@ -382,7 +389,7 @@ pub enum Alias {
 
         /// Replace existing alias if one exists with the same name
         /// Default: false (prevents accidental overwrites)
-        #[arg(short = 'w', long, default_value_t = false)]
+        #[arg(short = ARG_SHORT_OVERWRITE, long, default_value_t = false)]
         overwrite: bool,
     },
 
@@ -482,7 +489,7 @@ pub struct BatchCommonArgs {
     pub aliases: Option<Vec<String>>,
 
     /// Filter accounts by name using regular expression pattern
-    #[arg(short = 'f', long)]
+    #[arg(short = ARG_SHORT_ACCOUNT_FILTER_REGEX, long)]
     pub account_filter_regex: Option<String>,
 
     /// AWS region for operations
@@ -492,7 +499,7 @@ pub struct BatchCommonArgs {
 
     /// Number of concurrent operations to perform (at least 1)
     /// Default: 1 (sequential processing)
-    #[arg(short = 'p', long, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
+    #[arg(short = ARG_SHORT_PARALLEL, long, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
     pub parallel: usize,
 
     /// Custom directory for storing SSO authentication tokens
@@ -515,7 +522,7 @@ pub struct BatchCommonArgs {
 
     /// Show status and progress messages
     /// Default: false (Do not show operational logs)
-    #[arg(short = 'd', long, default_value_t = false)]
+    #[arg(short = ARG_SHORT_DEBUG, long, default_value_t = false)]
     pub debug: bool,
 }
 
@@ -532,19 +539,19 @@ pub enum Batch {
 
         /// Hide command output during execution
         /// Default: false (display command output)
-        #[arg(short = 'S', long, default_value_t = false)]
+        #[arg(short = ARG_SHORT_SUPPRESS_OUTPUT, long, default_value_t = false)]
         suppress_output: bool,
 
         /// Directory to save per-account output files
         /// No effect if suppress_output is enabled
-        #[arg(short = 'o', long)]
+        #[arg(short = ARG_SHORT_OUTPUT_DIR, long)]
         output_dir: Option<PathBuf>,
 
         /// Stop dispatching further accounts as soon as one of them fails
         /// Accounts already in flight are allowed to finish, the rest are reported as skipped
         /// Any failed account exits non-zero with or without this flag
         /// Default: false
-        #[arg(short = 'F', long, default_value_t = false)]
+        #[arg(short = ARG_SHORT_FAIL_FAST, long, default_value_t = false)]
         fail_fast: bool,
 
         /// Command and arguments to execute
@@ -596,5 +603,72 @@ mod tests {
         // short flag, so this asserts the whole tree is well formed.
         use clap::CommandFactory;
         Cli::command().debug_assert();
+    }
+
+    fn walk(command: &clap::Command, visit: &mut impl FnMut(&clap::Arg)) {
+        command.get_arguments().for_each(&mut *visit);
+        for subcommand in command.get_subcommands() {
+            walk(subcommand, visit);
+        }
+    }
+
+    /// The batch commands take list forms of concepts the single-account commands take one of,
+    /// so one letter covers each of these families rather than one long flag.
+    const SHORT_FLAG_FAMILIES: [&[&str]; 3] = [
+        &["account", "account-ids"],
+        &["role", "role-order"],
+        &["alias", "aliases"],
+    ];
+
+    fn same_family(one: &str, other: &str) -> bool {
+        SHORT_FLAG_FAMILIES
+            .iter()
+            .any(|family| family.contains(&one) && family.contains(&other))
+    }
+
+    #[test]
+    fn a_short_flag_means_the_same_long_flag_everywhere() {
+        use clap::CommandFactory;
+        use std::collections::HashMap;
+
+        let mut owner: HashMap<char, String> = HashMap::new();
+        let mut clashes: Vec<String> = Vec::new();
+        walk(&Cli::command(), &mut |arg| {
+            let (Some(short), Some(long)) = (arg.get_short(), arg.get_long()) else {
+                return;
+            };
+            match owner.get(&short) {
+                Some(owned) if owned != long && !same_family(owned, long) => {
+                    clashes.push(format!("-{short} is --{owned} and --{long}"));
+                }
+                Some(_) => {}
+                None => {
+                    owner.insert(short, long.to_string());
+                }
+            }
+        });
+
+        assert!(clashes.is_empty(), "{}", clashes.join("; "));
+    }
+
+    #[test]
+    fn no_argument_carries_a_short_alias() {
+        use clap::CommandFactory;
+
+        let mut aliased: Vec<String> = Vec::new();
+        walk(&Cli::command(), &mut |arg| {
+            if arg.get_all_short_aliases().is_some_and(|a| !a.is_empty()) {
+                aliased.push(format!(
+                    "--{}",
+                    arg.get_long().unwrap_or(arg.get_id().as_str())
+                ));
+            }
+        });
+
+        assert!(
+            aliased.is_empty(),
+            "a short alias is a second letter for one flag, which the convention rules out: {}",
+            aliased.join(", ")
+        );
     }
 }

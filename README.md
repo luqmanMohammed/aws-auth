@@ -69,6 +69,13 @@ Every credential-taking command accepts either `-a <account-id> -r <role>` or
 
 `--help` on any subcommand lists the rest.
 
+A short flag means the same long flag in every command, so `-o` is always `--output` and
+never `--output-dir`. Where two names want the same letter the second takes the uppercase
+form — `-a`/`-A` account/alias, `-r`/`-R` role/region, `-c`/`-C` cluster/config-dir,
+`-o`/`-O` output/omit-fields, `-f`/`-F` filter/fail-fast, `-d`/`-D` debug/output-dir. The
+list forms `batch` takes share the letter of their singular, so `-a` is `--account-ids`
+there. `init` configures a machine once and is long-only apart from `-C`.
+
 ### eval
 
 ```sh
@@ -124,8 +131,8 @@ aws-auth batch exec -F -A prod,staging -- ./migrate.sh
 ```
 
 Each child additionally gets `AWS_ACCOUNT_ID`. Accounts that resolve under no role are
-reported on stderr, and the command fails if none resolved at all. `-o <dir>` writes
-per-account `*-stdout.log` / `*-stderr.log`; `-S` discards output; `-d` adds progress
+reported on stderr, and the command fails if none resolved at all. `-D <dir>` writes
+per-account `*-stdout.log` / `*-stderr.log`; `-s` discards output; `-d` adds progress
 logging.
 
 **Any account whose command fails makes aws-auth exit non-zero**, and each failure is
@@ -136,7 +143,7 @@ flight are allowed to finish. It changes what runs, not what the run exits with.
 
 ### Output formats
 
-`alias list`, `sso list-accounts` and `sso list-account-roles` take `-F json|text`,
+`alias list`, `sso list-accounts` and `sso list-account-roles` take `-o json|text`,
 `-H` to drop headers, and `-O` to omit columns. Column names are matched ignoring case
 and spaces, so `-O accountId`, `-O "Account Id"` and `-O accountid` are equivalent, and
 an unrecognised name is an error rather than being ignored.
