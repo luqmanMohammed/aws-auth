@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/luqmanMohammed/aws-auth/compare/v0.3.1...v0.4.0) - 2026-08-27
+
+### Added
+
+- add --allow-partial to batch exec
+- add fail-fast to batch
+
+### Changed
+
+- give every short flag one meaning across the CLI
+- verify sso config before use and drop chrono from retry delays
+
+### Fixed
+
+- reject a negative create-token lock decay
+- poll through transport failures during device authorization
+- exit non-zero whenever a batch account fails
+- report locking as disabled only when the threshold is zero
+- allow --no-browser without an explicit true/false value
+- write config.json and aliases.json owner-only and atomically
+- only retry recoverable create-token polling errors
+- recover from an unreadable create-token lock
+
 ## [0.3.1](https://github.com/luqmanMohammed/aws-auth/compare/v0.3.0...v0.3.1) - 2026-08-22
 
 ### Documentation
