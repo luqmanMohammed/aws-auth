@@ -16,7 +16,8 @@ pub struct Cli {
 // so no argument may carry an inline `short`, a derived `short`, or a `short_alias`. The letter
 // is mnemonic for the noun in the long name, and where two nouns want the same letter the
 // second takes the uppercase form: account/alias, role/region, cluster/config-dir,
-// output/omit-fields, filter/fail-fast, debug/output-dir. `h` and `V` belong to clap. A letter
+// output/omit-fields, filter/fail-fast, debug/output-dir, parallel/allow-partial. `h` and `V`
+// belong to clap. A letter
 // covers a concept, so the list forms the batch commands take share the letter of their
 // singular (--account-ids with --account, and so on).
 //
@@ -36,6 +37,7 @@ const ARG_SHORT_NO_HEADERS: char = 'H';
 const ARG_SHORT_ACCOUNT_FILTER_REGEX: char = 'f';
 const ARG_SHORT_FAIL_FAST: char = 'F';
 const ARG_SHORT_PARALLEL: char = 'p';
+const ARG_SHORT_ALLOW_PARTIAL: char = 'P';
 const ARG_SHORT_DEBUG: char = 'd';
 const ARG_SHORT_OUTPUT_DIR: char = 'D';
 const ARG_SHORT_SUPPRESS_OUTPUT: char = 's';
@@ -553,6 +555,18 @@ pub enum Batch {
         /// Default: false
         #[arg(short = ARG_SHORT_FAIL_FAST, long, default_value_t = false)]
         fail_fast: bool,
+
+        /// Treat a run where at least one account succeeded as a success
+        /// Only a run in which every account failed exits non-zero
+        /// Cannot be combined with --fail-fast, which stops at the first failure
+        /// Default: false
+        #[arg(
+            short = ARG_SHORT_ALLOW_PARTIAL,
+            long,
+            conflicts_with = "fail_fast",
+            default_value_t = false
+        )]
+        allow_partial: bool,
 
         /// Command and arguments to execute
         /// Must be provided after -- separator

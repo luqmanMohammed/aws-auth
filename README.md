@@ -72,7 +72,8 @@ Every credential-taking command accepts either `-a <account-id> -r <role>` or
 A short flag means the same long flag in every command, so `-o` is always `--output` and
 never `--output-dir`. Where two names want the same letter the second takes the uppercase
 form — `-a`/`-A` account/alias, `-r`/`-R` role/region, `-c`/`-C` cluster/config-dir,
-`-o`/`-O` output/omit-fields, `-f`/`-F` filter/fail-fast, `-d`/`-D` debug/output-dir. The
+`-o`/`-O` output/omit-fields, `-f`/`-F` filter/fail-fast, `-d`/`-D` debug/output-dir,
+`-p`/`-P` parallel/allow-partial. The
 list forms `batch` takes share the letter of their singular, so `-a` is `--account-ids`
 there. `init` configures a machine once and is long-only apart from `-C`.
 
@@ -137,9 +138,16 @@ logging.
 
 **Any account whose command fails makes aws-auth exit non-zero**, and each failure is
 named on stderr — unlike `exec`, the exit status is a pass/fail for the run rather than
-a child's own code, since there are many children. `-F` / `--fail-fast` stops dispatching
-the accounts that have not started yet, reporting them as skipped; accounts already in
-flight are allowed to finish. It changes what runs, not what the run exits with.
+a child's own code, since there are many children. Two flags adjust that, and they are
+mutually exclusive:
+
+| Flag | Meaning |
+| --- | --- |
+| `-F`, `--fail-fast` | Stop dispatching accounts that have not started yet, reporting them as skipped. Accounts already in flight are allowed to finish. Changes what runs, not what the run exits with |
+| `-P`, `--allow-partial` | Exit 0 as long as one account succeeded. Only a run in which every account failed is a failure |
+
+Without `--allow-partial` the status does not depend on how many accounts you targeted,
+so the same broken command cannot pass simply by being pointed at more of them.
 
 ### Output formats
 

@@ -49,6 +49,18 @@ impl From<AwsSsoManagerError> for Error {
     }
 }
 
+/// Any failed account fails the run, so the exit status does not depend on how many accounts
+/// were targeted -- the one thing a caller in a `set -e` script cannot work around.
+/// `--allow-partial` is the only way to ask for the weaker rule, where a run counts as a failure
+/// only when nothing at all worked.
+fn run_failed(failed: usize, total: usize, allow_partial: bool) -> bool {
+    if allow_partial {
+        failed > 0 && failed == total
+    } else {
+        failed > 0
+    }
+}
+
 pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
     match &subcommand {
         Batch::Exec { arguments, .. } => {
@@ -203,6 +215,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
             suppress_output,
             output_dir,
             fail_fast,
+            allow_partial,
             batch_common,
         } => {
             let arguments: Arc<[String]> = Arc::from(arguments.into_boxed_slice());
@@ -244,14 +257,45 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                 eprintln!("WARN: {skipped} of {total} accounts were skipped after --fail-fast");
             }
 
-            // --fail-fast decides only whether the remaining accounts still run. Making it decide
-            // the exit status too would leave that status depending on how many accounts were
-            // targeted, which is the one thing a caller in a `set -e` script cannot work around.
-            if failed > 0 {
+            if run_failed(failed, total, allow_partial) {
                 return Err(Error::JobsFailed { failed, total });
             }
         }
     }
 
     Ok(())
+}
+
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
+#[cfg(test)]
+mod tests {
+    use super::run_failed;
+
+    #[test]
+    fn one_failure_among_many_fails_the_run_by_default() {
+        assert!(run_failed(1, 10, false));
+        assert!(run_failed(10, 10, false));
+    }
+
+    #[test]
+    fn a_run_with_nothing_failing_succeeds() {
+        assert!(!run_failed(0, 10, false));
+        assert!(!run_failed(0, 10, true));
+        assert!(!run_failed(0, 0, true), "no accounts is not a failure");
+    }
+
+    #[test]
+    fn allow_partial_only_fails_when_every_account_failed() {
+        assert!(!run_failed(9, 10, true), "one survivor is enough");
+        assert!(run_failed(10, 10, true), "nothing worked");
+    }
+
+    #[test]
+    fn the_default_does_not_depend_on_how_many_accounts_were_targeted() {
+        // The rule --allow-partial opts out of: without it, the same broken command must not
+        // report success just because it was pointed at more accounts.
+        for total in 1..20 {
+            assert!(run_failed(1, total, false), "1 of {total} failed");
+        }
+    }
 }
