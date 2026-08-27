@@ -158,8 +158,10 @@ an unrecognised name is an error rather than being ignored.
 }
 ```
 
-Only `startURL` and `ssoRegion` are required. Set any of them with
-`aws-auth init --update`, for example:
+Only `startURL` and `ssoRegion` are required, and they must be non-empty. `maxAttempts`
+must be at least 1. `createTokenLockDecay` may not be negative — use `0` to keep a lock
+until `aws-auth unlock` clears it. An invalid value is rejected on load rather than
+silently ignored. Set any of them with `aws-auth init --update`, for example:
 
 ```sh
 aws-auth init --update --max-attempts 20 --no-browser true

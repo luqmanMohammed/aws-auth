@@ -85,12 +85,28 @@ impl UnverifiedSsoConfig {
         if self.max_attempts == Some(0) {
             return Err(Error::InvalidField("maxAttempts", "must be at least 1"));
         }
+        // A negative decay puts every deadline in the past, so the lock would clear itself on
+        // load and silently stop guarding anything. Zero is the way to ask for that.
+        if self
+            .create_token_lock_decay
+            .is_some_and(|decay| decay < TimeDelta::zero())
+        {
+            return Err(Error::InvalidField(
+                "createTokenLockDecay",
+                "must not be negative; use 0 to disable decay",
+            ));
+        }
         Ok(AwsSsoConfig(self))
     }
 }
 
-/// Only reachable through [`UnverifiedSsoConfig::verify`], so the accessors below can resolve
-/// defaults rather than handing every caller an `Option` to `unwrap_or` for itself.
+/// Only reachable through [`UnverifiedSsoConfig::verify`], so `startURL` and `ssoRegion` are
+/// non-empty here, `maxAttempts` is at least one when set, and `createTokenLockDecay` is never
+/// negative.
+///
+/// The accessors returning a bare value resolve their default here. The three still returning an
+/// `Option` are defaulted by `AuthManager::new` instead, which owns the polling constants it
+/// applies whether or not a config supplied them.
 #[derive(Debug, Serialize)]
 pub struct AwsSsoConfig(UnverifiedSsoConfig);
 
@@ -132,5 +148,51 @@ impl AwsSsoConfig {
 
     pub fn no_browser(&self) -> bool {
         self.0.no_browser.unwrap_or(false)
+    }
+}
+
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(decay: Option<TimeDelta>) -> UnverifiedSsoConfig {
+        let mut config = UnverifiedSsoConfig::new(
+            "https://a.awsapps.com/start".to_string(),
+            "eu-west-2".to_string(),
+        );
+        config.create_token_lock_decay = decay;
+        config
+    }
+
+    #[test]
+    fn a_negative_lock_decay_is_rejected() {
+        let err = config(Some(TimeDelta::seconds(-1)))
+            .verify()
+            .expect_err("a negative decay can never be honoured");
+
+        assert!(
+            matches!(err, Error::InvalidField("createTokenLockDecay", _)),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_zero_lock_decay_is_accepted_and_disables_decay() {
+        let config = config(Some(TimeDelta::zero()))
+            .verify()
+            .expect("zero is the documented way to disable decay");
+
+        assert_eq!(config.create_token_lock_decay(), None);
+    }
+
+    #[test]
+    fn an_absent_lock_decay_falls_back_to_the_default() {
+        let config = config(None).verify().expect("an absent decay is valid");
+
+        assert_eq!(
+            config.create_token_lock_decay(),
+            Some(DEFAULT_CREATE_TOKEN_LOCK_DECAY)
+        );
     }
 }
