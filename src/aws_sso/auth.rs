@@ -506,6 +506,13 @@ where
         self.client_info.refresh_token = create_token.refresh_token;
         self.client_info.access_token_expires_at =
             Some(Utc::now() + TimeDelta::seconds(create_token.expires_in as i64));
+
+        if let Some(ref mut lock) = self.upstream_lock
+            && !lock.get_lock().is_clear()
+        {
+            lock.get_lock_mut().reset();
+            lock.save_lock().map_err(Error::LockProvider)?;
+        }
         Ok(())
     }
 
