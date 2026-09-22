@@ -164,8 +164,6 @@ an unrecognised name is an error rather than being ignored.
 {
   "startURL": "https://my-company.awsapps.com/start",
   "ssoRegion": "eu-west-2",
-  "maxAttempts": 10,
-  "initialDelay": { "secs": 10, "nanos": 0 },
   "retryInterval": { "secs": 5, "nanos": 0 },
   "createTokenRetryThreshold": 5,
   "createTokenLockDecay": [7200, 0],
@@ -173,13 +171,13 @@ an unrecognised name is an error rather than being ignored.
 }
 ```
 
-Only `startURL` and `ssoRegion` are required, and they must be non-empty. `maxAttempts`
-must be at least 1. `createTokenLockDecay` may not be negative — use `0` to keep a lock
-until `aws-auth unlock` clears it. An invalid value is rejected on load rather than
-silently ignored. Set any of them with `aws-auth init --update`, for example:
+Only `startURL` and `ssoRegion` are required, and they must be non-empty.
+`createTokenLockDecay` may not be negative — use `0` to keep a lock until `aws-auth
+unlock` clears it. An invalid value is rejected on load rather than silently ignored. Set
+any of them with `aws-auth init --update`, for example:
 
 ```sh
-aws-auth init --update --max-attempts 20 --no-browser true
+aws-auth init --update --retry-interval-seconds 10 --no-browser true
 ```
 
 Alongside it live `aliases.json` (your aliases), `cache.json` (the SSO session and

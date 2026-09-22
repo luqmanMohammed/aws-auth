@@ -13,8 +13,6 @@ pub struct ExecInitInputs {
 
     pub sso_start_url: Option<String>,
     pub sso_region: Option<String>,
-    pub max_attempts: Option<usize>,
-    pub initial_delay: Option<std::time::Duration>,
     pub retry_interval: Option<std::time::Duration>,
     pub create_token_retry_threshold: Option<u64>,
     pub create_token_lock_decay: Option<chrono::TimeDelta>,
@@ -70,8 +68,6 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         ));
     };
 
-    override_opt(&mut sso_config.max_attempts, exec_inputs.max_attempts);
-    override_opt(&mut sso_config.initial_delay, exec_inputs.initial_delay);
     override_opt(&mut sso_config.retry_interval, exec_inputs.retry_interval);
     override_opt(
         &mut sso_config.create_token_retry_threshold,
@@ -130,8 +126,6 @@ mod tests {
             recreate: false,
             sso_start_url: None,
             sso_region: None,
-            max_attempts: None,
-            initial_delay: None,
             retry_interval: None,
             create_token_retry_threshold: None,
             create_token_lock_decay: None,
@@ -235,45 +229,13 @@ mod tests {
 
         let mut args = inputs(&config_dir);
         args.update = true;
-        args.max_attempts = Some(7);
         args.create_token_retry_threshold = Some(3);
         args.no_browser = Some(true);
         exec_init(args).expect("update should succeed");
 
         let config = config_at(&config_dir);
-        assert_eq!(config.max_attempts(), Some(7));
         assert_eq!(config.create_token_retry_threshold(), 3);
         assert!(config.no_browser());
-    }
-
-    #[test]
-    fn a_zero_max_attempts_is_rejected_before_anything_is_written() {
-        let dir = TempDir::new("init-zero-attempts");
-        let config_dir = dir.join("cfg");
-
-        let mut args = inputs(&config_dir);
-        args.sso_start_url = Some("https://a.awsapps.com/start".to_string());
-        args.sso_region = Some("eu-west-2".to_string());
-        args.max_attempts = Some(0);
-        assert!(exec_init(args).is_err(), "zero attempts can never succeed");
-        assert!(!config_dir.exists(), "nothing should have been created");
-    }
-
-    #[test]
-    fn an_update_to_zero_max_attempts_leaves_the_config_alone() {
-        let dir = TempDir::new("init-zero-update");
-        let config_dir = created(&dir, "https://a.awsapps.com/start", "eu-west-2");
-
-        let mut args = inputs(&config_dir);
-        args.update = true;
-        args.max_attempts = Some(0);
-        assert!(exec_init(args).is_err(), "zero attempts can never succeed");
-
-        assert_eq!(
-            config_at(&config_dir).max_attempts(),
-            None,
-            "the rejected update must not have been written"
-        );
     }
 
     #[test]
