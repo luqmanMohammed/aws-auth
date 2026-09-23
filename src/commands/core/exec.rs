@@ -35,7 +35,7 @@ fn child_exit_code(status: ExitStatus) -> i32 {
     status.code().unwrap_or(1)
 }
 
-pub async fn exec_exec(credentials: Credentials, exec_inputs: ExecExecInputs) -> Result {
+pub fn exec_exec(credentials: Credentials, exec_inputs: ExecExecInputs) -> Result {
     let program = exec_inputs
         .arguments
         .first()
