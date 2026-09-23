@@ -22,7 +22,11 @@ changelog_update = true
 # Without this a CI or test change bumps the version on its own, producing a release
 # whose changelog section is empty because those types are skipped below. A chore that
 # does alter the binary, such as a dependency or toolchain upgrade, belongs under build.
-release_commits = "^(feat|fix|perf|refactor|build)[(:]"
+# A dependabot bump never reaches this as its `build(deps)` commit: that commit touches
+# only Cargo.lock, so release-plz sees no package file change and instead fabricates a
+# `chore: update Cargo.{lock,toml} dependencies` entry, which is all the filter gets.
+# Single quotes keep the regex escape out of TOML's hands.
+release_commits = '^(feat|fix|perf|refactor|build)[(:]|^chore: update Cargo\.(lock|toml) dependencies'
 
 [changelog]
 # First match wins, so the two skips at the top have to precede the type rules: merge

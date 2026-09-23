@@ -4,6 +4,11 @@ on:
   # released is always visible. Merging it is the release; nothing publishes on its own.
   push:
     branches: [main]
+  # A bump merged by dependabot auto-merge is pushed with GITHUB_TOKEN, and GitHub starts
+  # no workflow runs for those, so the push trigger above never fires for it. This sweep is
+  # what gets those bumps into a release pull request.
+  schedule:
+    - cron: "17 6 * * *"
   workflow_dispatch:
 
 # Every write goes through the app token below, not through this one.

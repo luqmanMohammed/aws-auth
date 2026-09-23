@@ -93,8 +93,7 @@ pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
                     region: Region::new(common_args.region.clone()),
                     arguments: arguments.clone(),
                 },
-            )
-            .await?;
+            )?;
         }
     }
     Ok(())

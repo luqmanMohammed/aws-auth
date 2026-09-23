@@ -162,16 +162,6 @@ pub enum Commands {
         #[arg(long)]
         sso_region: Option<String>,
 
-        /// Maximum authentication retry attempts
-        /// Default: 10
-        #[arg(long)]
-        max_attempts: Option<usize>,
-
-        /// Initial delay in seconds before first retry attempt
-        /// Default: 10
-        #[arg(long)]
-        initial_delay_seconds: Option<u64>,
-
         /// Interval in seconds between retry attempts
         /// Default: 5
         #[arg(long)]

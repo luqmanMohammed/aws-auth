@@ -43,8 +43,6 @@ async fn run() -> Result<(), String> {
         Commands::Init {
             sso_start_url,
             sso_region,
-            max_attempts,
-            initial_delay_seconds,
             retry_interval_seconds,
             config_dir,
             recreate,
@@ -58,8 +56,6 @@ async fn run() -> Result<(), String> {
                 recreate,
                 sso_start_url,
                 sso_region,
-                max_attempts,
-                initial_delay: initial_delay_seconds.map(std::time::Duration::from_secs),
                 retry_interval: retry_interval_seconds.map(std::time::Duration::from_secs),
                 create_token_lock_decay: create_token_lock_decay_seconds
                     .map(|s| chrono::Duration::seconds(s as i64)),

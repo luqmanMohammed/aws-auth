@@ -43,8 +43,6 @@ fn build_aws_sso_manager<'a>(
         cache_manager,
         config.start_url(),
         Region::new(config.sso_region().to_string()),
-        config.initial_delay(),
-        config.max_attempts(),
         config.retry_interval(),
         None,
         handle_cache,

@@ -16,14 +16,13 @@ use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_runtime_api::http::Response;
 use chrono::{DateTime, TimeDelta, Utc};
 use std::time::{Duration, UNIX_EPOCH};
+use tokio::time::Instant;
 
 const OIDC_APP_NAME: &str = "aws-auth";
 const OIDC_CLIENT_TYPE: &str = "public";
 const OIDC_SCOPE: &str = "sso:account:access";
 const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
-const DEFAULT_CREATE_TOKEN_INITIAL_DELAY: Duration = Duration::from_secs(10);
 const DEFAULT_CREATE_TOKEN_RETRY_INTERVAL: Duration = Duration::from_secs(5);
-const DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS: usize = 10;
 const CREATE_TOKEN_SLOW_DOWN_BACKOFF: Duration = Duration::from_secs(5);
 const EXPECT_MESSAGE: &str = "Should be present, caller pub function assume_role asures it";
 
@@ -122,6 +121,13 @@ impl<
 
 type Result<T, CE, LE> = std::result::Result<T, Error<CE, LE>>;
 
+/// The floor stops a zero from either side turning polling into a request flood.
+fn poll_interval(retry_interval: Duration, device_interval: Duration) -> Duration {
+    retry_interval
+        .max(device_interval)
+        .max(Duration::from_secs(1))
+}
+
 pub struct AuthManager<'a, C, L>
 where
     C: 'static + ManageCache,
@@ -130,8 +136,6 @@ where
     sso_client: SsoClient,
     cache_manager: CacheRefMut<'a, C>,
     start_url: String,
-    initial_delay: Duration,
-    max_attempts: usize,
     retry_interval: Duration,
     upstream_lock: Option<L>,
 
@@ -154,8 +158,6 @@ where
         cache_manager: impl Into<CacheRefMut<'a, C>>,
         start_url: impl Into<String>,
         sso_region: Region,
-        initial_delay: Option<Duration>,
-        max_attempts: Option<usize>,
         retry_interval: Option<Duration>,
         code_writer: Option<Box<dyn std::io::Write + 'static>>,
         handle_cache: bool,
@@ -175,8 +177,6 @@ where
             sso_client,
             cache_manager: cache_manager.into(),
             start_url: start_url.into(),
-            initial_delay: initial_delay.unwrap_or(DEFAULT_CREATE_TOKEN_INITIAL_DELAY),
-            max_attempts: max_attempts.unwrap_or(DEFAULT_CREATE_TOKEN_MAX_ATTEMPTS),
             retry_interval: retry_interval.unwrap_or(DEFAULT_CREATE_TOKEN_RETRY_INTERVAL),
             client_info: ClientInformation::default(),
             code_writer: match code_writer {
@@ -445,24 +445,11 @@ where
         }
 
         let device_interval = Duration::from_secs(device_auth.interval.max(0) as u64);
-        let mut interval = if self.retry_interval < device_interval {
-            device_interval
-        } else {
-            self.retry_interval
-        };
+        let mut interval = poll_interval(self.retry_interval, device_interval);
+        let deadline = Instant::now() + Duration::from_secs(device_auth.expires_in.max(0) as u64);
 
-        let max_attempts = if browser_opened {
-            self.max_attempts
-        } else {
-            let remaining = Duration::from_secs(device_auth.expires_in.max(0) as u64)
-                .saturating_sub(self.initial_delay);
-            let attempts = remaining.as_secs() / interval.as_secs().max(1);
-            self.max_attempts.max(attempts as usize)
-        };
+        tokio::time::sleep(interval).await;
 
-        tokio::time::sleep(self.initial_delay).await;
-
-        let mut attempts = 1;
         let create_token = loop {
             match self
                 .oidc_client
@@ -499,7 +486,8 @@ where
                         }
                         _ => break Err(err),
                     };
-                    if attempts >= max_attempts {
+                    // Stop rather than sleep into a code that expires before the next poll.
+                    if Instant::now() + interval >= deadline {
                         // Only a round that actually reached AWS is evidence of the repeated
                         // authorizations the lock exists to slow down.
                         if reached_endpoint && let Some(ref mut lock) = self.upstream_lock {
@@ -509,7 +497,6 @@ where
                         break Err(err);
                     }
                     tokio::time::sleep(interval).await;
-                    attempts += 1;
                 }
             }
         }
@@ -519,6 +506,13 @@ where
         self.client_info.refresh_token = create_token.refresh_token;
         self.client_info.access_token_expires_at =
             Some(Utc::now() + TimeDelta::seconds(create_token.expires_in as i64));
+
+        if let Some(ref mut lock) = self.upstream_lock
+            && !lock.get_lock().is_clear()
+        {
+            lock.get_lock_mut().reset();
+            lock.save_lock().map_err(Error::LockProvider)?;
+        }
         Ok(())
     }
 
@@ -607,5 +601,43 @@ where
             upstream_lock.save_lock().map_err(Error::LockProvider)?;
         }
         Ok(())
+    }
+}
+
+// Tests were written by AI (Claude Opus 5), not reviewed by Author
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aws_wins_when_it_asks_for_slower_polling_than_configured() {
+        assert_eq!(
+            poll_interval(Duration::from_secs(5), Duration::from_secs(30)),
+            Duration::from_secs(30)
+        );
+    }
+
+    #[test]
+    fn the_configured_interval_wins_when_it_is_the_slower_of_the_two() {
+        assert_eq!(
+            poll_interval(Duration::from_secs(30), Duration::from_secs(5)),
+            Duration::from_secs(30)
+        );
+    }
+
+    #[test]
+    fn a_zero_from_either_side_never_yields_a_sleepless_poll() {
+        assert_eq!(
+            poll_interval(Duration::ZERO, Duration::ZERO),
+            Duration::from_secs(1)
+        );
+    }
+
+    #[test]
+    fn the_default_interval_clears_the_floor_untouched() {
+        assert_eq!(
+            poll_interval(DEFAULT_CREATE_TOKEN_RETRY_INTERVAL, Duration::ZERO),
+            DEFAULT_CREATE_TOKEN_RETRY_INTERVAL
+        );
     }
 }

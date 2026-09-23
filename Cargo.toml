@@ -7,14 +7,11 @@ description = "Get AWS credentials from IAM Identity Center into your shell, a c
 repository = "https://github.com/luqmanMohammed/aws-auth"
 license = "MIT"
 readme = "README.md"
-# let-chains under edition 2024 stabilised in 1.88
-rust-version = "1.88"
 
 [dependencies]
 aws-config = "1.10.1"
 aws-sdk-sso = "1.106.0"
 aws-sdk-ssooidc = "1.108.0"
-aws-sdk-sts = "1.111.0"
 aws-sigv4 = "1.5.1"
 aws-smithy-runtime-api = "1.14.0"
 base64 = "0.23.1"

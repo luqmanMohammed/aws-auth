@@ -31,10 +31,6 @@ pub struct UnverifiedSsoConfig {
     pub start_url: String,
     #[serde(rename = "ssoRegion")]
     pub sso_region: String,
-    #[serde(rename = "maxAttempts", skip_serializing_if = "Option::is_none")]
-    pub max_attempts: Option<usize>,
-    #[serde(rename = "initialDelay", skip_serializing_if = "Option::is_none")]
-    pub initial_delay: Option<Duration>,
     #[serde(rename = "retryInterval", skip_serializing_if = "Option::is_none")]
     pub retry_interval: Option<Duration>,
     #[serde(
@@ -56,8 +52,6 @@ impl UnverifiedSsoConfig {
         UnverifiedSsoConfig {
             start_url,
             sso_region,
-            max_attempts: None,
-            initial_delay: None,
             retry_interval: None,
             create_token_retry_threshold: None,
             create_token_lock_decay: None,
@@ -82,9 +76,6 @@ impl UnverifiedSsoConfig {
         if self.sso_region.trim().is_empty() {
             return Err(Error::InvalidField("ssoRegion", "must not be empty"));
         }
-        if self.max_attempts == Some(0) {
-            return Err(Error::InvalidField("maxAttempts", "must be at least 1"));
-        }
         // A negative decay puts every deadline in the past, so the lock would clear itself on
         // load and silently stop guarding anything. Zero is the way to ask for that.
         if self
@@ -101,12 +92,11 @@ impl UnverifiedSsoConfig {
 }
 
 /// Only reachable through [`UnverifiedSsoConfig::verify`], so `startURL` and `ssoRegion` are
-/// non-empty here, `maxAttempts` is at least one when set, and `createTokenLockDecay` is never
-/// negative.
+/// non-empty here and `createTokenLockDecay` is never negative.
 ///
-/// The accessors returning a bare value resolve their default here. The three still returning an
-/// `Option` are defaulted by `AuthManager::new` instead, which owns the polling constants it
-/// applies whether or not a config supplied them.
+/// The accessors returning a bare value resolve their default here. `retryInterval` is defaulted
+/// by `AuthManager::new` instead, which owns the polling constants it applies whether or not a
+/// config supplied them.
 #[derive(Debug, Serialize)]
 pub struct AwsSsoConfig(UnverifiedSsoConfig);
 
@@ -117,14 +107,6 @@ impl AwsSsoConfig {
 
     pub fn sso_region(&self) -> &str {
         &self.0.sso_region
-    }
-
-    pub fn max_attempts(&self) -> Option<usize> {
-        self.0.max_attempts
-    }
-
-    pub fn initial_delay(&self) -> Option<Duration> {
-        self.0.initial_delay
     }
 
     pub fn retry_interval(&self) -> Option<Duration> {

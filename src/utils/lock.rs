@@ -24,6 +24,9 @@ impl CounterLock {
         self.count = 0;
         self.locked_at = None;
     }
+    pub fn is_clear(&self) -> bool {
+        self.count == 0 && self.locked_at.is_none()
+    }
 }
 
 pub trait CounterLockProvider {
@@ -163,6 +166,21 @@ mod tests {
         assert!(!lock.is_locked());
         lock.increment(1);
         assert!(lock.is_locked(), "counting restarts from zero");
+    }
+
+    #[test]
+    fn a_fresh_lock_is_clear_and_a_counted_one_is_not() {
+        let mut lock = unlocked(3);
+        assert!(lock.is_clear(), "nothing has been counted yet");
+
+        lock.increment(1);
+        assert!(
+            !lock.is_clear(),
+            "a count below the threshold still needs clearing"
+        );
+
+        lock.reset();
+        assert!(lock.is_clear());
     }
 
     #[test]
