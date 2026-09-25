@@ -63,7 +63,7 @@ impl<'a, C: ManageCache> From<&'a mut C> for CacheRefMut<'a, C> {
 }
 
 pub trait ManageCache {
-    type Error: 'static + std::fmt::Debug + std::error::Error;
+    type Error: std::error::Error;
 
     fn load_cache(&mut self) -> Result<(), Self::Error>;
     fn commit(&self) -> Result<(), Self::Error>;

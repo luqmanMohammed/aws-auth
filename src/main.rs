@@ -26,9 +26,8 @@ fn error_to_string(error: impl Error) -> String {
     error.to_string()
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> ExitCode {
-    match run().await {
+fn main() -> ExitCode {
+    match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("aws-auth: {}", err.trim_end());
@@ -37,7 +36,7 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn run() -> Result<(), String> {
+fn run() -> Result<(), String> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Init {
@@ -65,21 +64,17 @@ async fn run() -> Result<(), String> {
             })
             .map_err(error_to_string)?;
         }
-        Commands::Core(command) => exec_core_commands(&command)
-            .await
-            .map_err(error_to_string)?,
+        Commands::Core(command) => exec_core_commands(&command).map_err(error_to_string)?,
         Commands::Alias { subcommand } => exec_alias(subcommand).map_err(error_to_string)?,
-        Commands::Sso { subcommand } => exec_sso(subcommand).await.map_err(error_to_string)?,
-        Commands::Batch { subcommand } => exec_batch(subcommand).await.map_err(error_to_string)?,
+        Commands::Sso { subcommand } => exec_sso(subcommand).map_err(error_to_string)?,
+        Commands::Batch { subcommand } => exec_batch(subcommand).map_err(error_to_string)?,
         Commands::Unlock { config_dir } => {
             exec_unlock(config_dir.as_deref()).map_err(error_to_string)?
         }
         Commands::Logout {
             config_dir,
             cache_dir,
-        } => exec_logout(config_dir.as_deref(), cache_dir.as_deref())
-            .await
-            .map_err(error_to_string)?,
+        } => exec_logout(config_dir.as_deref(), cache_dir.as_deref()).map_err(error_to_string)?,
     }
     Ok(())
 }
