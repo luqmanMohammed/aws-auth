@@ -31,7 +31,7 @@ pub struct UnverifiedSsoConfig {
     #[serde(rename = "ssoRegion")]
     pub sso_region: String,
     #[serde(rename = "retryInterval", skip_serializing_if = "Option::is_none")]
-    pub retry_interval: Option<Duration>,
+    pub retry_interval: Option<SignedDuration>,
     #[serde(
         rename = "createTokenRetryThreshold",
         skip_serializing_if = "Option::is_none"
@@ -93,6 +93,12 @@ impl UnverifiedSsoConfig {
         if self.sso_region.trim().is_empty() {
             return Err(Error::InvalidField("ssoRegion", "must not be empty"));
         }
+        if self
+            .retry_interval
+            .is_some_and(|interval| interval.is_negative())
+        {
+            return Err(Error::InvalidField("retryInterval", "must not be negative"));
+        }
         // A negative decay puts every deadline in the past, so the lock would clear itself on
         // load and silently stop guarding anything. Zero is the way to ask for that.
         if self
@@ -109,7 +115,7 @@ impl UnverifiedSsoConfig {
 }
 
 /// Only reachable through [`UnverifiedSsoConfig::verify`], so `startURL` and `ssoRegion` are
-/// non-empty here and `createTokenLockDecay` is never negative.
+/// non-empty here and neither `retryInterval` nor `createTokenLockDecay` is negative.
 ///
 /// The accessors returning a bare value resolve their default here. `retryInterval` is defaulted
 /// by `AuthManager::new` instead, which owns the polling constants it applies whether or not a
@@ -127,7 +133,7 @@ impl AwsSsoConfig {
     }
 
     pub fn retry_interval(&self) -> Option<Duration> {
-        self.0.retry_interval
+        self.0.retry_interval.map(SignedDuration::unsigned_abs)
     }
 
     pub fn create_token_retry_threshold(&self) -> u64 {
@@ -151,9 +157,12 @@ impl AwsSsoConfig {
 }
 
 /// The format written before the move from chrono to jiff, which differs only in
-/// `createTokenLockDecay` being chrono's `[secs, nanos]` with `nanos` in `0..1e9`.
+/// `retryInterval` being std's `{"secs", "nanos"}` and `createTokenLockDecay` being chrono's
+/// `[secs, nanos]` with `nanos` in `0..1e9`.
 #[derive(Deserialize)]
 struct LegacySsoConfig {
+    #[serde(rename = "retryInterval", default, deserialize_with = "std_duration")]
+    retry_interval: Option<SignedDuration>,
     #[serde(
         rename = "createTokenLockDecay",
         default,
@@ -167,10 +176,19 @@ struct LegacySsoConfig {
 impl From<LegacySsoConfig> for UnverifiedSsoConfig {
     fn from(legacy: LegacySsoConfig) -> Self {
         UnverifiedSsoConfig {
+            retry_interval: legacy.retry_interval,
             create_token_lock_decay: legacy.create_token_lock_decay,
             ..legacy.config
         }
     }
+}
+
+fn std_duration<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<SignedDuration>, D::Error> {
+    Option::<Duration>::deserialize(deserializer)?
+        .map(|duration| SignedDuration::try_from(duration).map_err(serde::de::Error::custom))
+        .transpose()
 }
 
 fn secs_nanos<'de, D: serde::Deserializer<'de>>(
@@ -213,6 +231,21 @@ mod tests {
 
         assert!(
             matches!(err, Error::InvalidField("createTokenLockDecay", _)),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_negative_retry_interval_is_rejected() {
+        let mut config = config(None);
+        config.retry_interval = Some(SignedDuration::from_secs(-1));
+
+        let err = config
+            .verify()
+            .expect_err("a negative interval can never be waited for");
+
+        assert!(
+            matches!(err, Error::InvalidField("retryInterval", _)),
             "got {err:?}"
         );
     }
@@ -290,6 +323,7 @@ mod tests {
 
         let config = UnverifiedSsoConfig::from_config_file(&path).expect("config should load");
 
+        assert_eq!(config.retry_interval, Some(SignedDuration::from_secs(10)));
         assert_eq!(
             config.create_token_lock_decay,
             Some(SignedDuration::from_mins(30))
@@ -299,7 +333,7 @@ mod tests {
             serde_json::json!({
                 "startURL": "https://a.awsapps.com/start",
                 "ssoRegion": "eu-west-2",
-                "retryInterval": { "secs": 10, "nanos": 0 },
+                "retryInterval": "PT10S",
                 "createTokenRetryThreshold": 2,
                 "createTokenLockDecay": "PT30M",
                 "noBrowser": true,
