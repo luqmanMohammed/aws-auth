@@ -1,5 +1,5 @@
 use crate::utils::private_fs;
-use chrono::Utc;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 pub struct CounterLock {
     threshold: u64,
     count: u64,
-    locked_at: Option<chrono::DateTime<chrono::Utc>>,
+    locked_at: Option<Timestamp>,
 }
 
 impl CounterLock {
@@ -17,7 +17,7 @@ impl CounterLock {
     pub fn increment(&mut self, count: u64) {
         self.count += count;
         if self.count >= self.threshold {
-            self.locked_at = Some(chrono::Utc::now());
+            self.locked_at = Some(Timestamp::now());
         }
     }
     pub fn reset(&mut self) {
@@ -42,7 +42,7 @@ pub struct DecayingJsonCounterLockProvider {
     lock_path: PathBuf,
     lock: Option<CounterLock>,
     threshold: u64,
-    lock_decay_duration: Option<chrono::Duration>,
+    lock_decay_duration: Option<SignedDuration>,
 }
 
 impl DecayingJsonCounterLockProvider {
@@ -50,7 +50,7 @@ impl DecayingJsonCounterLockProvider {
         base_dir: &Path,
         lockname: &str,
         threshold: u64,
-        lock_decay_duration: Option<chrono::Duration>,
+        lock_decay_duration: Option<SignedDuration>,
     ) -> Self {
         Self {
             lock_path: base_dir.join(lockname).with_extension("json"),
@@ -83,7 +83,7 @@ impl CounterLockProvider for DecayingJsonCounterLockProvider {
         let mut lock: CounterLock = serde_json::from_reader(file)?;
         let mut save_lock = false;
         if let Some((ldd, la)) = self.lock_decay_duration.zip(lock.locked_at)
-            && Utc::now() >= la + ldd
+            && Timestamp::now() >= la + ldd
         {
             lock = CounterLock {
                 threshold: self.threshold,
@@ -223,7 +223,7 @@ mod tests {
             dir.path(),
             "l",
             1,
-            Some(chrono::Duration::seconds(-1)),
+            Some(SignedDuration::from_secs(-1)),
         );
         decaying.load_lock().unwrap();
 
@@ -245,7 +245,7 @@ mod tests {
             dir.path(),
             "l",
             1,
-            Some(chrono::Duration::hours(2)),
+            Some(SignedDuration::from_hours(2)),
         );
         still_locked.load_lock().unwrap();
 
@@ -264,7 +264,7 @@ mod tests {
             dir.path(),
             "l",
             1,
-            Some(chrono::Duration::seconds(-1)),
+            Some(SignedDuration::from_secs(-1)),
         );
         decaying.load_lock().unwrap();
 

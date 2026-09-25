@@ -152,9 +152,10 @@ fn cached(access_token: Option<&str>, refresh_token: Option<&str>) -> MemCache {
         start_url: Some(START_URL.to_string()),
         client_id: Some("client-id".to_string()),
         client_secret: Some("client-secret".to_string()),
-        client_secret_expires_at: Some(Utc::now() + TimeDelta::days(30)),
+        client_secret_expires_at: Some(Timestamp::now() + SignedDuration::from_hours(30 * 24)),
         access_token: access_token.map(str::to_string),
-        access_token_expires_at: access_token.map(|_| Utc::now() + TimeDelta::hours(1)),
+        access_token_expires_at: access_token
+            .map(|_| Timestamp::now() + SignedDuration::from_hours(1)),
         refresh_token: refresh_token.map(str::to_string),
     });
     cache
@@ -181,7 +182,9 @@ fn registered() -> ApiResult<RegisterClientOutput, RegisterClientError> {
     Ok(RegisterClientOutput::builder()
         .client_id("client-id")
         .client_secret("client-secret")
-        .client_secret_expires_at((Utc::now() + TimeDelta::days(30)).timestamp())
+        .client_secret_expires_at(
+            (Timestamp::now() + SignedDuration::from_hours(30 * 24)).as_second(),
+        )
         .build())
 }
 
@@ -214,7 +217,7 @@ fn pending() -> ApiResult<CreateTokenOutput, CreateTokenError> {
 }
 
 fn role_credentials() -> ApiResult<GetRoleCredentialsOutput, GetRoleCredentialsError> {
-    let expiration = (Utc::now() + TimeDelta::hours(1)).timestamp_millis();
+    let expiration = (Timestamp::now() + SignedDuration::from_hours(1)).as_millisecond();
     Ok(GetRoleCredentialsOutput::builder()
         .role_credentials(
             RoleCredentials::builder()

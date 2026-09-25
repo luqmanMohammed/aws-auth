@@ -5,7 +5,7 @@ use crate::aws_sso::AwsSsoManagerError;
 use aws_config::Region;
 use aws_sdk_ssooidc::config::Credentials;
 use cache::CacheManagerInputs;
-use chrono::TimeDelta;
+use jiff::SignedDuration;
 use std::path::Path;
 
 pub struct ExecEksInputs<'a> {
@@ -15,7 +15,7 @@ pub struct ExecEksInputs<'a> {
     pub region: Region,
     pub eks_cache_dir: Option<&'a Path>,
     pub config_dir: &'a Path,
-    pub expiry: Option<TimeDelta>,
+    pub expiry: Option<SignedDuration>,
 }
 
 #[derive(Debug, thiserror::Error)]

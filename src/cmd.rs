@@ -1,4 +1,5 @@
 use clap::{Args, Parser, Subcommand};
+use jiff::SignedDuration;
 use std::path::PathBuf;
 
 /// AWS-Auth: A CLI tool for AWS authentication and credential management
@@ -92,6 +93,34 @@ fn validate_account_id(s: &str) -> Result<String, String> {
     Ok(s.to_string())
 }
 
+/// A bare number is seconds, which keeps the values the old `--*-seconds` flags took working.
+/// A day is taken as 24 hours.
+fn parse_duration(s: &str) -> Result<SignedDuration, String> {
+    if let Ok(secs) = s.parse::<i64>() {
+        return Ok(SignedDuration::from_secs(secs));
+    }
+    s.parse::<jiff::Span>()
+        .and_then(|span| span.to_duration(jiff::SpanRelativeTo::days_are_24_hours()))
+        .map_err(|err| {
+            format!("expected a duration such as 30s, 5m, 2h or 1d (or plain seconds): {err}")
+        })
+}
+
+fn parse_std_duration(s: &str) -> Result<std::time::Duration, String> {
+    parse_duration(s)?
+        .try_into()
+        .map_err(|_| "must not be negative".to_string())
+}
+
+fn parse_eks_expiry(s: &str) -> Result<SignedDuration, String> {
+    let expiry = parse_duration(s)?;
+    if (SignedDuration::from_secs(1)..=SignedDuration::from_hours(7 * 24)).contains(&expiry) {
+        Ok(expiry)
+    } else {
+        Err("must be between 1s and 7d, the AWS signing maximum".to_string())
+    }
+}
+
 #[derive(Args, Clone)]
 #[group(required = true, multiple = true)]
 pub struct AssumeInput {
@@ -162,10 +191,10 @@ pub enum Commands {
         #[arg(long)]
         sso_region: Option<String>,
 
-        /// Interval in seconds between retry attempts
-        /// Default: 5
-        #[arg(long)]
-        retry_interval_seconds: Option<u64>,
+        /// Interval between retry attempts, such as 5s or 1m (plain numbers are seconds)
+        /// Default: 5s
+        #[arg(long, alias = "retry-interval-seconds", value_parser = parse_std_duration)]
+        retry_interval: Option<std::time::Duration>,
 
         /// Custom directory to store the AWS SSO configuration
         /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
@@ -193,14 +222,14 @@ pub enum Commands {
         #[arg(long)]
         create_token_retry_threshold: Option<u64>,
 
-        /// Automatically removes lock after decay seconds
+        /// Automatically removes lock after this duration, such as 30m, 3h or 1d
         /// When the SSO token creation is locked due to exceeding the retry threshold,
-        /// this setting determines how long (in seconds) the lock will remain active
-        /// before being automatically removed. This prevents indefinite lockouts.
-        /// Set to 0 to disable lock decay.
-        /// Default: 7200 (2 hour)
-        #[arg(long)]
-        create_token_lock_decay_seconds: Option<u64>,
+        /// this setting determines how long the lock will remain active before being
+        /// automatically removed. This prevents indefinite lockouts.
+        /// Plain numbers are seconds. Set to 0 to disable lock decay.
+        /// Default: 2h
+        #[arg(long, alias = "create-token-lock-decay-seconds", value_parser = parse_duration)]
+        create_token_lock_decay: Option<SignedDuration>,
 
         /// Never try to open a browser during device authorization
         /// Prints the verification URL instead, for hosts with no browser of their own
@@ -284,10 +313,11 @@ pub enum CoreCommands {
         #[arg(long)]
         eks_cache_dir: Option<PathBuf>,
 
-        /// Token expiration time in seconds (1 to 604800, the AWS signing maximum)
-        /// Default: 860 seconds
-        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=604_800))]
-        eks_expiry_seconds: Option<u64>,
+        /// Token expiration time, such as 15m or 1h (1s to 7d, the AWS signing maximum)
+        /// Plain numbers are seconds.
+        /// Default: 14m20s
+        #[arg(long, alias = "eks-expiry-seconds", value_parser = parse_eks_expiry)]
+        eks_expiry: Option<SignedDuration>,
     },
 
     /// Output AWS environment variables for credential access
@@ -599,6 +629,66 @@ mod tests {
         assert!(validate_account_id("11111111111a").is_err());
         assert!(validate_account_id("1111 11111111").is_err());
         assert!(validate_account_id("-11111111111").is_err());
+    }
+
+    #[test]
+    fn a_duration_takes_friendly_iso_or_plain_seconds() {
+        assert_eq!(parse_duration("3h"), Ok(SignedDuration::from_hours(3)));
+        assert_eq!(parse_duration("30m"), Ok(SignedDuration::from_mins(30)));
+        assert_eq!(parse_duration("1h30m"), Ok(SignedDuration::from_mins(90)));
+        assert_eq!(parse_duration("PT2H"), Ok(SignedDuration::from_hours(2)));
+        assert_eq!(parse_duration("7200"), Ok(SignedDuration::from_hours(2)));
+        assert_eq!(parse_duration("0"), Ok(SignedDuration::ZERO));
+        assert_eq!(parse_duration("1d"), Ok(SignedDuration::from_hours(24)));
+        assert!(
+            parse_duration("1mo").is_err(),
+            "a month has no fixed length"
+        );
+        assert!(parse_duration("soon").is_err());
+    }
+
+    #[test]
+    fn a_negative_retry_interval_is_rejected() {
+        assert_eq!(
+            parse_std_duration("5s"),
+            Ok(std::time::Duration::from_secs(5))
+        );
+        assert!(parse_std_duration("-5s").is_err());
+    }
+
+    #[test]
+    fn the_eks_expiry_is_bounded_by_the_aws_signing_maximum() {
+        assert_eq!(parse_eks_expiry("1s"), Ok(SignedDuration::from_secs(1)));
+        assert_eq!(
+            parse_eks_expiry("168h"),
+            Ok(SignedDuration::from_hours(168))
+        );
+        assert!(parse_eks_expiry("0").is_err());
+        assert!(parse_eks_expiry("604801").is_err());
+    }
+
+    #[test]
+    fn the_old_seconds_flags_still_parse() {
+        let cli = Cli::try_parse_from([
+            "aws-auth",
+            "init",
+            "--retry-interval-seconds",
+            "10",
+            "--create-token-lock-decay-seconds",
+            "1800",
+        ])
+        .expect("the old flag names should be accepted");
+
+        let Commands::Init {
+            retry_interval,
+            create_token_lock_decay,
+            ..
+        } = cli.command
+        else {
+            panic!("expected init");
+        };
+        assert_eq!(retry_interval, Some(std::time::Duration::from_secs(10)));
+        assert_eq!(create_token_lock_decay, Some(SignedDuration::from_mins(30)));
     }
 
     #[test]

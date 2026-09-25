@@ -6,15 +6,15 @@ use aws_sigv4::http_request::{
 use aws_sigv4::sign;
 use aws_smithy_runtime_api::client::identity::Identity;
 use base64::{Engine, engine::general_purpose::URL_SAFE};
-use chrono::{DateTime, Utc};
-use chrono::{Duration, Local};
 use http::Request;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::SystemTime;
 
 const K8S_AWS_ID_HEADER: &str = "x-k8s-aws-id";
 const TOKEN_PREFIX: &str = "k8s-aws-v1";
-const DEFAULT_EXPIRY: Duration = Duration::seconds(860);
+const DEFAULT_EXPIRY: SignedDuration = SignedDuration::from_secs(860);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -30,7 +30,7 @@ pub const DEFAULT_EXEC_CREDENTIALS_API_VERSION: &str = "client.authentication.k8
 #[derive(Debug, Deserialize, Serialize)]
 pub struct K8sExecCredentialsStatus {
     #[serde(rename = "expirationTimestamp")]
-    pub expiration_timestamp: DateTime<Utc>,
+    pub expiration_timestamp: Timestamp,
     pub token: String,
 }
 
@@ -49,22 +49,17 @@ pub fn generate_eks_credentials(
     credentials: &Credentials,
     region: &Region,
     cluster_name: &str,
-    expires_in: Option<&Duration>,
+    expires_in: Option<&SignedDuration>,
 ) -> Result<K8sExecCredentials> {
     let expires_in = expires_in.unwrap_or(&DEFAULT_EXPIRY);
+    let token_expiry = Timestamp::now() + *expires_in;
     let credential_expiry = credentials
         .expiry()
-        .map_or(Utc::now() + *expires_in, |cx_st| {
-            let cx_dt: DateTime<Utc> = cx_st.into();
-            if cx_dt < Utc::now() + *expires_in {
-                cx_dt
-            } else {
-                Utc::now() + *expires_in
-            }
-        });
+        .and_then(|expiry| Timestamp::try_from(expiry).ok())
+        .map_or(token_expiry, |expiry| expiry.min(token_expiry));
 
     let mut settings = SigningSettings::default();
-    settings.expires_in = Some(expires_in.to_std().unwrap_or_default());
+    settings.expires_in = Some((*expires_in).try_into().unwrap_or_default());
     settings.signature_location = SignatureLocation::QueryParams;
 
     let identity = &Identity::from(credentials.to_owned());
@@ -74,7 +69,7 @@ pub fn generate_eks_credentials(
         .identity(identity)
         .region(&region)
         .name("sts")
-        .time(Local::now().into())
+        .time(SystemTime::now())
         .settings(settings)
         .build()
         .expect("there should not be any build errors");

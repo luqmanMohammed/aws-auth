@@ -1,11 +1,11 @@
 use crate::aws_sso::types::{ClientInformation, CredentialsWrapper};
 
 use aws_sdk_ssooidc::config::Credentials;
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-const EXPIRATION_BUFFER: Duration = Duration::minutes(5);
+const EXPIRATION_BUFFER: SignedDuration = SignedDuration::from_mins(5);
 
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct Cache {
@@ -82,7 +82,7 @@ pub trait ManageCache {
         let ci = &self.get_cache_as_ref().client_info;
         match (&ci.access_token, &ci.access_token_expires_at) {
             (Some(access_token), Some(expires_at)) => {
-                let now = Utc::now();
+                let now = Timestamp::now();
                 let expiration_time = *expires_at - EXPIRATION_BUFFER;
                 if now < expiration_time {
                     Some(access_token)
@@ -107,7 +107,7 @@ pub trait ManageCache {
             &ci.client_secret_expires_at,
         ) {
             (Some(client_id), Some(client_secret), Some(expires_at)) => {
-                let now = Utc::now();
+                let now = Timestamp::now();
                 let expiration_time = *expires_at - EXPIRATION_BUFFER;
                 if now < expiration_time {
                     Some((client_id, client_secret))
@@ -123,7 +123,7 @@ pub trait ManageCache {
         let cache_key = format!("{}-{}", account_id, role_name);
         let credentials = self.get_cache_as_ref().sessions.get(&cache_key)?;
         let expiry = credentials.expires_after?;
-        if Utc::now() > expiry - EXPIRATION_BUFFER {
+        if Timestamp::now() > expiry - EXPIRATION_BUFFER {
             return None;
         }
 
@@ -140,14 +140,14 @@ pub trait ManageCache {
         self.get_cache_as_mut().client_info.client_id = Some(client_id);
         self.get_cache_as_mut().client_info.client_secret = Some(client_secret);
         self.get_cache_as_mut().client_info.client_secret_expires_at =
-            DateTime::from_timestamp(client_secret_expires_at, 0);
+            Timestamp::from_second(client_secret_expires_at).ok();
     }
 
     #[allow(dead_code)]
     fn set_access_token(&mut self, access_token: String, access_token_expires_in: i32) {
         self.get_cache_as_mut().client_info.access_token = Some(access_token);
         self.get_cache_as_mut().client_info.access_token_expires_at =
-            Some(Utc::now() + Duration::seconds(access_token_expires_in as i64));
+            Some(Timestamp::now() + SignedDuration::from_secs(access_token_expires_in.into()));
     }
 
     fn set_session(&mut self, account_id: &str, role_name: &str, credentials: Credentials) {
@@ -275,14 +275,14 @@ mod tests {
         }
     }
 
-    fn in_hours(hours: i64) -> DateTime<Utc> {
-        Utc::now() + Duration::hours(hours)
+    fn in_hours(hours: i64) -> Timestamp {
+        Timestamp::now() + SignedDuration::from_hours(hours)
     }
 
     /// A cache with a live client registration and, unless overridden, live tokens.
     fn cache_with(
-        client_secret_expiry: DateTime<Utc>,
-        access_token_expiry: DateTime<Utc>,
+        client_secret_expiry: Timestamp,
+        access_token_expiry: Timestamp,
         refresh_token: Option<&str>,
     ) -> TestCache {
         TestCache {
@@ -330,7 +330,11 @@ mod tests {
 
     #[test]
     fn an_access_token_inside_the_expiry_buffer_counts_as_expired() {
-        let cache = cache_with(in_hours(24), Utc::now() + Duration::minutes(1), None);
+        let cache = cache_with(
+            in_hours(24),
+            Timestamp::now() + SignedDuration::from_mins(1),
+            None,
+        );
 
         assert!(
             cache.get_access_token().is_none(),
@@ -340,7 +344,11 @@ mod tests {
 
     #[test]
     fn an_access_token_beyond_the_buffer_is_used() {
-        let cache = cache_with(in_hours(24), Utc::now() + Duration::minutes(30), None);
+        let cache = cache_with(
+            in_hours(24),
+            Timestamp::now() + SignedDuration::from_mins(30),
+            None,
+        );
 
         assert_eq!(cache.get_access_token(), Some("access-token"));
     }
@@ -397,7 +405,7 @@ mod tests {
                 access_key_id: "AKIA".to_string(),
                 secret_access_key: "secret".to_string(),
                 session_token: None,
-                expires_after: Some(Utc::now() + Duration::minutes(1)),
+                expires_after: Some(Timestamp::now() + SignedDuration::from_mins(1)),
             },
         );
 

@@ -113,8 +113,8 @@ users:
 ```
 
 Tokens are cached per account, role, region and cluster under `<config-dir>/eks`, and
-entries left untouched for seven days are cleaned up. `--eks-expiry-seconds` tunes the
-token lifetime (1 to 604800, default 860).
+entries left untouched for seven days are cleaned up. `--eks-expiry` tunes the
+token lifetime, such as `15m` or `1h` (1s to 7d, default 14m20s).
 
 ### batch exec
 
@@ -166,18 +166,21 @@ an unrecognised name is an error rather than being ignored.
   "ssoRegion": "eu-west-2",
   "retryInterval": { "secs": 5, "nanos": 0 },
   "createTokenRetryThreshold": 5,
-  "createTokenLockDecay": [7200, 0],
+  "createTokenLockDecay": "PT2H",
   "noBrowser": false
 }
 ```
 
 Only `startURL` and `ssoRegion` are required, and they must be non-empty.
-`createTokenLockDecay` may not be negative — use `0` to keep a lock until `aws-auth
-unlock` clears it. An invalid value is rejected on load rather than silently ignored. Set
-any of them with `aws-auth init --update`, for example:
+`createTokenLockDecay` is an ISO 8601 duration such as `"PT2H"` (a friendly `"2h"` is
+accepted too) and may not be negative — use `"PT0S"` to keep a lock until `aws-auth
+unlock` clears it. A config still holding the older `[secs, nanos]` form is rewritten in
+the current one the next time it is loaded. An invalid value is rejected on load rather than silently ignored. Set
+any of them with `aws-auth init --update`, whose duration flags take values such as `30s`,
+`5m`, `3h` or `1d` (a plain number is seconds), for example:
 
 ```sh
-aws-auth init --update --retry-interval-seconds 10 --no-browser true
+aws-auth init --update --retry-interval 10s --create-token-lock-decay 3h --no-browser true
 ```
 
 Alongside it live `aliases.json` (your aliases), `cache.json` (the SSO session and

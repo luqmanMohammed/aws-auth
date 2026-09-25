@@ -1,6 +1,6 @@
 use aws_config::Region;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use aws_sdk_ssooidc::config::Credentials;
 
@@ -19,10 +19,7 @@ pub fn exec_eval(credentials: Credentials, exec_inputs: ExecEvalInputs) {
                 "secret_access_key": credentials.secret_access_key(),
                 "region": exec_inputs.region.to_string(),
                 "session_token": credentials.session_token(),
-                "expiration": credentials.expiry().map(|e| {
-                    let dt: DateTime<Utc> = e.into();
-                    dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-                })
+                "expiration": expiration(&credentials)
             });
             println!("{}", output)
         }
@@ -48,13 +45,31 @@ pub fn exec_eval(credentials: Credentials, exec_inputs: ExecEvalInputs) {
                 "{prefix}AWS_DEFAULT_REGION={quote}{}{quote}",
                 exec_inputs.region
             );
-            if let Some(expiry) = credentials.expiry() {
-                let dt: DateTime<Utc> = expiry.into();
-                println!(
-                    "{prefix}AWS_SSO_SESSION_EXPIRATION={quote}{}{quote}",
-                    dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-                );
+            if let Some(expiry) = expiration(&credentials) {
+                println!("{prefix}AWS_SSO_SESSION_EXPIRATION={quote}{expiry}{quote}");
             }
         }
+    }
+}
+
+fn expiration(credentials: &Credentials) -> Option<String> {
+    let expiry = Timestamp::try_from(credentials.expiry()?).ok()?;
+    Some(format!("{expiry:.0}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn the_expiration_is_rfc3339_utc_truncated_to_whole_seconds() {
+        let expiry = UNIX_EPOCH + Duration::new(1_800_000_000, 987_654_321);
+        let credentials = Credentials::new("id", "secret", None, Some(expiry), "test");
+
+        assert_eq!(
+            expiration(&credentials).as_deref(),
+            Some("2027-01-15T08:00:00Z")
+        );
     }
 }

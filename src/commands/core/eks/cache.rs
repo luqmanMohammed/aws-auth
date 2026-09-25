@@ -1,6 +1,6 @@
 use crate::utils::private_fs;
 use aws_config::Region;
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,7 +16,7 @@ struct K8sExecCredential {
 #[derive(Debug, Deserialize)]
 struct K8sExecCredentialStatus {
     #[serde(alias = "expirationTimestamp")]
-    expiration_timestamp: DateTime<Utc>,
+    expiration_timestamp: Timestamp,
 }
 
 pub struct CacheManager {
@@ -59,7 +59,7 @@ impl CacheManager {
                 serde_json::from_str::<K8sExecCredential>(&content)
                     .ok()
                     .and_then(|k8s_exec_creds| {
-                        if Utc::now() + Duration::seconds(30)
+                        if Timestamp::now() + SignedDuration::from_secs(30)
                             < k8s_exec_creds.status.expiration_timestamp
                         {
                             Some(content)
@@ -108,7 +108,7 @@ impl CacheManager {
             let expired = fs::read_to_string(&path)
                 .ok()
                 .and_then(|content| serde_json::from_str::<K8sExecCredential>(&content).ok())
-                .is_some_and(|creds| creds.status.expiration_timestamp <= Utc::now());
+                .is_some_and(|creds| creds.status.expiration_timestamp <= Timestamp::now());
             if expired {
                 let _ = fs::remove_file(&path);
             }
@@ -143,10 +143,10 @@ mod tests {
     /// no portable way to set an mtime from std, so the tests needing one are unix only.
     #[cfg(unix)]
     fn set_age_days(path: &Path, days: i64) {
-        let when = chrono::Local::now() - Duration::days(days);
+        let when = jiff::Zoned::now() - SignedDuration::from_hours(days * 24);
         let status = std::process::Command::new("touch")
             .arg("-t")
-            .arg(when.format("%Y%m%d%H%M.%S").to_string())
+            .arg(when.strftime("%Y%m%d%H%M.%S").to_string())
             .arg(path)
             .status()
             .expect("touch should be available");
@@ -188,7 +188,7 @@ mod tests {
     fn a_token_expiring_within_the_grace_period_is_not_a_cache_hit() {
         let dir = TempDir::new("eks-grace");
         let manager = manager(dir.path());
-        let soon = (Utc::now() + Duration::seconds(10)).to_rfc3339();
+        let soon = (Timestamp::now() + SignedDuration::from_secs(10)).to_string();
         manager
             .cache_credentials(&token_json(&soon))
             .expect("write should succeed");

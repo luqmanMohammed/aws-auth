@@ -15,7 +15,7 @@ pub struct ExecInitInputs {
     pub sso_region: Option<String>,
     pub retry_interval: Option<std::time::Duration>,
     pub create_token_retry_threshold: Option<u64>,
-    pub create_token_lock_decay: Option<chrono::TimeDelta>,
+    pub create_token_lock_decay: Option<jiff::SignedDuration>,
     pub no_browser: Option<bool>,
 }
 
