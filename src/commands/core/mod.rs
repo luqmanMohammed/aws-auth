@@ -6,7 +6,6 @@ use aws_config::Region;
 use eks::ExecEksInputs;
 use eval::ExecEvalInputs;
 use exec::ExecExecInputs;
-use jiff::SignedDuration;
 
 use crate::{
     alias_providers,
@@ -56,7 +55,7 @@ pub fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
         CoreCommands::Eks {
             cluster,
             eks_cache_dir,
-            eks_expiry_seconds,
+            eks_expiry,
             ..
         } => {
             eks::exec_eks(
@@ -68,7 +67,7 @@ pub fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
                     region: Region::new(common_args.region.clone()),
                     eks_cache_dir: eks_cache_dir.as_deref(),
                     config_dir: &config_dir,
-                    expiry: eks_expiry_seconds.map(|v| SignedDuration::from_secs(v as i64)),
+                    expiry: *eks_expiry,
                 },
             )?;
         }

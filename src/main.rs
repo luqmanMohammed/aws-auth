@@ -42,11 +42,11 @@ fn run() -> Result<(), String> {
         Commands::Init {
             sso_start_url,
             sso_region,
-            retry_interval_seconds,
+            retry_interval,
             config_dir,
             recreate,
             create_token_retry_threshold,
-            create_token_lock_decay_seconds,
+            create_token_lock_decay,
             update,
             no_browser,
         } => {
@@ -55,9 +55,8 @@ fn run() -> Result<(), String> {
                 recreate,
                 sso_start_url,
                 sso_region,
-                retry_interval: retry_interval_seconds.map(std::time::Duration::from_secs),
-                create_token_lock_decay: create_token_lock_decay_seconds
-                    .map(|s| jiff::SignedDuration::from_secs(s as i64)),
+                retry_interval,
+                create_token_lock_decay,
                 create_token_retry_threshold,
                 update,
                 no_browser,
