@@ -54,16 +54,13 @@ jobs:
         if: matrix.target != '' && runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Cache cargo registry
-        uses: actions/cache@v6
+      # Saved from main only: a cache saved on a pull request can only be restored by that
+      # pull request, yet it still counts against the repository limit and evicts main's.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
+          key: ${{ matrix.artifact }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check formatting
         run: cargo fmt --all -- --check
