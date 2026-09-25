@@ -106,12 +106,6 @@ fn parse_duration(s: &str) -> Result<SignedDuration, String> {
         })
 }
 
-fn parse_std_duration(s: &str) -> Result<std::time::Duration, String> {
-    parse_duration(s)?
-        .try_into()
-        .map_err(|_| "must not be negative".to_string())
-}
-
 fn parse_eks_expiry(s: &str) -> Result<SignedDuration, String> {
     let expiry = parse_duration(s)?;
     if (SignedDuration::from_secs(1)..=SignedDuration::from_hours(7 * 24)).contains(&expiry) {
@@ -193,8 +187,8 @@ pub enum Commands {
 
         /// Interval between retry attempts, such as 5s or 1m (plain numbers are seconds)
         /// Default: 5s
-        #[arg(long, alias = "retry-interval-seconds", value_parser = parse_std_duration)]
-        retry_interval: Option<std::time::Duration>,
+        #[arg(long, alias = "retry-interval-seconds", value_parser = parse_duration)]
+        retry_interval: Option<SignedDuration>,
 
         /// Custom directory to store the AWS SSO configuration
         /// Can be set via AWS_AUTH_CONFIG_DIR environment variable
@@ -648,15 +642,6 @@ mod tests {
     }
 
     #[test]
-    fn a_negative_retry_interval_is_rejected() {
-        assert_eq!(
-            parse_std_duration("5s"),
-            Ok(std::time::Duration::from_secs(5))
-        );
-        assert!(parse_std_duration("-5s").is_err());
-    }
-
-    #[test]
     fn the_eks_expiry_is_bounded_by_the_aws_signing_maximum() {
         assert_eq!(parse_eks_expiry("1s"), Ok(SignedDuration::from_secs(1)));
         assert_eq!(
@@ -687,7 +672,7 @@ mod tests {
         else {
             panic!("expected init");
         };
-        assert_eq!(retry_interval, Some(std::time::Duration::from_secs(10)));
+        assert_eq!(retry_interval, Some(SignedDuration::from_secs(10)));
         assert_eq!(create_token_lock_decay, Some(SignedDuration::from_mins(30)));
     }
 
