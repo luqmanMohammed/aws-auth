@@ -18,7 +18,7 @@ use aws_sdk_ssooidc::operation::start_device_authorization::{
 };
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_runtime_api::http::Response;
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 const OIDC_CLIENT_TYPE: &str = "public";
@@ -380,7 +380,7 @@ where
         self.client_info.client_id = register_client.client_id;
         self.client_info.client_secret = register_client.client_secret;
         self.client_info.client_secret_expires_at =
-            DateTime::from_timestamp(register_client.client_secret_expires_at, 0);
+            Timestamp::from_second(register_client.client_secret_expires_at).ok();
 
         Ok(())
     }
@@ -480,7 +480,7 @@ where
         self.client_info.access_token = create_token.access_token;
         self.client_info.refresh_token = create_token.refresh_token;
         self.client_info.access_token_expires_at =
-            Some(Utc::now() + TimeDelta::seconds(create_token.expires_in as i64));
+            Some(Timestamp::now() + SignedDuration::from_secs(create_token.expires_in.into()));
 
         if let Some(ref mut lock) = self.upstream_lock
             && !lock.get_lock().is_clear()
@@ -516,7 +516,7 @@ where
         self.client_info.access_token = create_token.access_token;
         self.client_info.refresh_token = create_token.refresh_token;
         self.client_info.access_token_expires_at =
-            Some(Utc::now() + TimeDelta::seconds(create_token.expires_in as i64));
+            Some(Timestamp::now() + SignedDuration::from_secs(create_token.expires_in.into()));
         Ok(())
     }
 

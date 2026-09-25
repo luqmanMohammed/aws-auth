@@ -57,7 +57,7 @@ fn run() -> Result<(), String> {
                 sso_region,
                 retry_interval: retry_interval_seconds.map(std::time::Duration::from_secs),
                 create_token_lock_decay: create_token_lock_decay_seconds
-                    .map(|s| chrono::Duration::seconds(s as i64)),
+                    .map(|s| jiff::SignedDuration::from_secs(s as i64)),
                 create_token_retry_threshold,
                 update,
                 no_browser,

@@ -166,14 +166,16 @@ an unrecognised name is an error rather than being ignored.
   "ssoRegion": "eu-west-2",
   "retryInterval": { "secs": 5, "nanos": 0 },
   "createTokenRetryThreshold": 5,
-  "createTokenLockDecay": [7200, 0],
+  "createTokenLockDecay": "PT2H",
   "noBrowser": false
 }
 ```
 
 Only `startURL` and `ssoRegion` are required, and they must be non-empty.
-`createTokenLockDecay` may not be negative — use `0` to keep a lock until `aws-auth
-unlock` clears it. An invalid value is rejected on load rather than silently ignored. Set
+`createTokenLockDecay` is an ISO 8601 duration such as `"PT2H"` (a friendly `"2h"` is
+accepted too) and may not be negative — use `"PT0S"` to keep a lock until `aws-auth
+unlock` clears it. A config still holding the older `[secs, nanos]` form is rewritten in
+the current one the next time it is loaded. An invalid value is rejected on load rather than silently ignored. Set
 any of them with `aws-auth init --update`, for example:
 
 ```sh

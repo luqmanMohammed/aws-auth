@@ -1,5 +1,5 @@
 use aws_sdk_ssooidc::config::Credentials;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -7,7 +7,7 @@ pub struct CredentialsWrapper {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub session_token: Option<String>,
-    pub expires_after: Option<DateTime<Utc>>,
+    pub expires_after: Option<Timestamp>,
 }
 
 impl From<Credentials> for CredentialsWrapper {
@@ -16,7 +16,7 @@ impl From<Credentials> for CredentialsWrapper {
             access_key_id: value.access_key_id().to_string(),
             secret_access_key: value.secret_access_key().to_string(),
             session_token: value.session_token().map(ToString::to_string),
-            expires_after: value.expiry().map(Into::into),
+            expires_after: value.expiry().and_then(|expiry| expiry.try_into().ok()),
         }
     }
 }
@@ -36,8 +36,8 @@ impl From<CredentialsWrapper> for Credentials {
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct ClientInformation {
     pub start_url: Option<String>,
-    pub client_secret_expires_at: Option<DateTime<Utc>>,
-    pub access_token_expires_at: Option<DateTime<Utc>>,
+    pub client_secret_expires_at: Option<Timestamp>,
+    pub access_token_expires_at: Option<Timestamp>,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
     pub access_token: Option<String>,
