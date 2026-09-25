@@ -61,7 +61,7 @@ fn run_failed(failed: usize, total: usize, allow_partial: bool) -> bool {
     }
 }
 
-pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
+pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
     match &subcommand {
         Batch::Exec { arguments, .. } => {
             exec::ExecJob::validate(arguments)
@@ -121,8 +121,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
             let regex = Regex::new(&format!("^{}", account_name_regex))?;
 
             sso_manager
-                .list_accounts(batch_common.ignore_cache)
-                .await?
+                .list_accounts(batch_common.ignore_cache)?
                 .into_iter()
                 .filter(|ai| {
                     ai.account_name.as_ref().is_some()
@@ -138,8 +137,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                 .collect::<Vec<_>>()
         } else {
             sso_manager
-                .list_accounts(batch_common.ignore_cache)
-                .await?
+                .list_accounts(batch_common.ignore_cache)?
                 .into_iter()
                 .filter(|ai| ai.account_id().is_some())
                 .flat_map(|ai| {
@@ -161,10 +159,7 @@ pub async fn exec_batch(subcommand: Batch) -> Result<(), Error> {
         if credentials_map.contains_key(account_id) {
             continue;
         }
-        match sso_manager
-            .assume_role(account_id, role_name, false, batch_common.ignore_cache)
-            .await
-        {
+        match sso_manager.assume_role(account_id, role_name, false, batch_common.ignore_cache) {
             Ok(credentials) => {
                 elog!(
                     batch_common.debug,

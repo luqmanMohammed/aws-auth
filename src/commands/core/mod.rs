@@ -35,7 +35,7 @@ impl From<AwsSsoManagerError> for Error {
     }
 }
 
-pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
+pub fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
     let common_args = command.get_common_args();
     let config_dir = resolve_config_dir(common_args.config_dir.as_deref())?;
     let mut sso_manager = build_sso_mgr_cached(&config_dir, common_args.sso_cache_dir.as_deref())?;
@@ -43,15 +43,13 @@ pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
     let assume_identity = resolve_assume_identifier(&mut alias_provider, common_args)
         .map_err(|err| Error::AssumeIdResolver(err.to_string()))?;
 
-    let mut credential_resolver = async || {
-        sso_manager
-            .assume_role(
-                assume_identity.account,
-                assume_identity.role,
-                common_args.refresh_sts_token,
-                common_args.ignore_cache,
-            )
-            .await
+    let mut credential_resolver = || {
+        sso_manager.assume_role(
+            assume_identity.account,
+            assume_identity.role,
+            common_args.refresh_sts_token,
+            common_args.ignore_cache,
+        )
     };
 
     match command {
@@ -72,11 +70,10 @@ pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
                     config_dir: &config_dir,
                     expiry: eks_expiry_seconds.map(|v| Duration::seconds(v as i64)),
                 },
-            )
-            .await?;
+            )?;
         }
         CoreCommands::Eval { output, .. } => {
-            let credentials = credential_resolver().await?;
+            let credentials = credential_resolver()?;
             eval::exec_eval(
                 credentials,
                 ExecEvalInputs {
@@ -86,7 +83,7 @@ pub async fn exec_core_commands(command: &CoreCommands) -> Result<(), Error> {
             );
         }
         CoreCommands::Exec { arguments, .. } => {
-            let credentials = credential_resolver().await?;
+            let credentials = credential_resolver()?;
             exec::exec_exec(
                 credentials,
                 ExecExecInputs {

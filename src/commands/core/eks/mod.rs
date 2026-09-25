@@ -38,9 +38,9 @@ impl From<AwsSsoManagerError> for Error {
 
 pub type Result = std::result::Result<(), Error>;
 
-pub async fn exec_eks<F>(mut credential_resolver: F, exec_inputs: ExecEksInputs<'_>) -> Result
+pub fn exec_eks<F>(mut credential_resolver: F, exec_inputs: ExecEksInputs<'_>) -> Result
 where
-    F: AsyncFnMut() -> std::result::Result<Credentials, AwsSsoManagerError>,
+    F: FnMut() -> std::result::Result<Credentials, AwsSsoManagerError>,
 {
     let cache_manager = cache::CacheManager::new(&CacheManagerInputs {
         account_id: exec_inputs.account,
@@ -56,7 +56,7 @@ where
     let exec_creds = if let Some(hit) = cache_manager.resolve_cache_hit() {
         hit
     } else {
-        let credentials = credential_resolver().await?;
+        let credentials = credential_resolver()?;
 
         let k8s_creds = sign::generate_eks_credentials(
             &credentials,

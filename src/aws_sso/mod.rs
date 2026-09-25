@@ -1,3 +1,4 @@
+mod api;
 mod auth;
 pub mod cache;
 pub mod config;
@@ -6,6 +7,7 @@ mod types;
 use std::path::Path;
 
 use crate::utils::lock::DecayingJsonCounterLockProvider;
+use api::LazySdkAdapter;
 use auth::AuthManager;
 use aws_config::Region;
 use cache::{CacheRefMut, mono_json::MonoJsonCacheManager};
@@ -16,7 +18,7 @@ pub type CacheManagerError = cache::mono_json::Error;
 pub type ConfigError = config::Error;
 pub type LockProvider = DecayingJsonCounterLockProvider;
 pub type LockProviderError = std::io::Error;
-pub type AwsSsoManager<'a> = AuthManager<'a, CacheManager, LockProvider>;
+pub type AwsSsoManager<'a> = AuthManager<'a, CacheManager, LockProvider, LazySdkAdapter>;
 pub type AwsSsoManagerError = auth::Error<CacheManagerError, LockProviderError>;
 
 pub const CREATE_TOKEN_LOCK_NAME: &str = "aws-sso-create-token-lock";
@@ -40,9 +42,9 @@ fn build_aws_sso_manager<'a>(
     });
 
     Ok(AwsSsoManager::new(
+        LazySdkAdapter::new(Region::new(config.sso_region().to_string())),
         cache_manager,
         config.start_url(),
-        Region::new(config.sso_region().to_string()),
         config.retry_interval(),
         None,
         handle_cache,

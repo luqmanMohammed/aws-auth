@@ -1,24 +1,26 @@
+use super::api::{APP_NAME, AwsApi};
 use super::cache::CacheRefMut;
 use crate::aws_sso::cache::ManageCache;
 use crate::aws_sso::types::ClientInformation;
 use crate::utils::lock::CounterLockProvider;
-use aws_config::{AppName, BehaviorVersion, Region, SdkConfig};
-use aws_sdk_sso::Client as SsoClient;
-use aws_sdk_sso::operation::get_role_credentials::GetRoleCredentialsError;
-use aws_sdk_sso::operation::list_account_roles::ListAccountRolesError;
-use aws_sdk_sso::operation::list_accounts::ListAccountsError;
+use aws_sdk_sso::operation::get_role_credentials::{
+    GetRoleCredentialsError, GetRoleCredentialsInput,
+};
+use aws_sdk_sso::operation::list_account_roles::{ListAccountRolesError, ListAccountRolesInput};
+use aws_sdk_sso::operation::list_accounts::{ListAccountsError, ListAccountsInput};
+use aws_sdk_sso::operation::logout::LogoutInput;
 use aws_sdk_sso::types::{AccountInfo, RoleInfo};
-use aws_sdk_ssooidc::operation::create_token::CreateTokenError;
-use aws_sdk_ssooidc::operation::register_client::RegisterClientError;
-use aws_sdk_ssooidc::operation::start_device_authorization::StartDeviceAuthorizationError;
-use aws_sdk_ssooidc::{Client as OidcClient, config::Credentials};
+use aws_sdk_ssooidc::config::Credentials;
+use aws_sdk_ssooidc::operation::create_token::{CreateTokenError, CreateTokenInput};
+use aws_sdk_ssooidc::operation::register_client::{RegisterClientError, RegisterClientInput};
+use aws_sdk_ssooidc::operation::start_device_authorization::{
+    StartDeviceAuthorizationError, StartDeviceAuthorizationInput,
+};
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_runtime_api::http::Response;
 use chrono::{DateTime, TimeDelta, Utc};
-use std::time::{Duration, UNIX_EPOCH};
-use tokio::time::Instant;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
-const OIDC_APP_NAME: &str = "aws-auth";
 const OIDC_CLIENT_TYPE: &str = "public";
 const OIDC_SCOPE: &str = "sso:account:access";
 const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
@@ -27,10 +29,7 @@ const CREATE_TOKEN_SLOW_DOWN_BACKOFF: Duration = Duration::from_secs(5);
 const EXPECT_MESSAGE: &str = "Should be present, caller pub function assume_role asures it";
 
 #[derive(Debug)]
-pub enum Error<
-    CE: 'static + std::error::Error + std::fmt::Debug,
-    LE: 'static + std::error::Error + std::fmt::Debug,
-> {
+pub enum Error<CE: std::error::Error, LE: std::error::Error> {
     OidcRegisterClient(Box<SdkError<RegisterClientError, Response>>),
     OidcStartDeviceAuthorization(Box<SdkError<StartDeviceAuthorizationError, Response>>),
     OidcMissingVerificationUri,
@@ -44,11 +43,7 @@ pub enum Error<
     UpstreamLocked,
 }
 
-impl<
-    CE: 'static + std::error::Error + std::fmt::Debug,
-    LE: 'static + std::error::Error + std::fmt::Debug,
-> std::fmt::Display for Error<CE, LE>
-{
+impl<CE: std::error::Error, LE: std::error::Error> std::fmt::Display for Error<CE, LE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::OidcRegisterClient(err) => write!(f, "Oidc Register Client Error: {}", err),
@@ -86,20 +81,11 @@ impl<
     }
 }
 
-impl<
-    CE: 'static + std::error::Error + std::fmt::Debug,
-    LE: 'static + std::error::Error + std::fmt::Debug,
-> std::error::Error for Error<CE, LE>
-{
-}
+impl<CE: std::error::Error, LE: std::error::Error> std::error::Error for Error<CE, LE> {}
 
-impl<
-    CE: 'static + std::error::Error + std::fmt::Debug,
-    LE: 'static + std::error::Error + std::fmt::Debug,
-> Error<CE, LE>
-{
+impl<CE: std::error::Error, LE: std::error::Error> Error<CE, LE> {
     /// The SSO portal API has no distinct error for a role the caller may not assume, so this is
-    /// also what a forbidden role looks like -- callers must not treat it as proof of a bad token.
+    /// also what a forbidden role looks like; callers must not treat it as proof of a bad token.
     fn is_unauthorized(&self) -> bool {
         match self {
             Error::SsoGetRoleCredentials(err) => matches!(
@@ -128,53 +114,47 @@ fn poll_interval(retry_interval: Duration, device_interval: Duration) -> Duratio
         .max(Duration::from_secs(1))
 }
 
-pub struct AuthManager<'a, C, L>
+fn input<T, E: std::fmt::Debug>(built: std::result::Result<T, E>) -> T {
+    built.expect("SDK input builders check no fields, so building cannot fail")
+}
+
+pub struct AuthManager<'a, C, L, A>
 where
-    C: 'static + ManageCache,
+    C: ManageCache,
 {
-    oidc_client: OidcClient,
-    sso_client: SsoClient,
+    api: A,
     cache_manager: CacheRefMut<'a, C>,
     start_url: String,
     retry_interval: Duration,
     upstream_lock: Option<L>,
 
     client_info: ClientInformation,
-    code_writer: Box<dyn std::io::Write + 'static>,
+    code_writer: Box<dyn std::io::Write>,
     handle_cache: bool,
     no_browser: bool,
     access_token_reacquired: bool,
 }
 
-impl<'a, C, L> AuthManager<'a, C, L>
+impl<'a, C, L, A> AuthManager<'a, C, L, A>
 where
-    C: 'static + ManageCache,
-    C::Error: 'static + std::error::Error + std::fmt::Debug,
-    L: 'static + CounterLockProvider,
+    C: ManageCache,
+    L: CounterLockProvider,
+    A: AwsApi,
 {
     /// TODO: Refactor into a input type
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        api: A,
         cache_manager: impl Into<CacheRefMut<'a, C>>,
         start_url: impl Into<String>,
-        sso_region: Region,
         retry_interval: Option<Duration>,
-        code_writer: Option<Box<dyn std::io::Write + 'static>>,
+        code_writer: Option<Box<dyn std::io::Write>>,
         handle_cache: bool,
         no_browser: bool,
         upstream_lock: Option<L>,
     ) -> Self {
-        let sdk_config = SdkConfig::builder()
-            .app_name(AppName::new(OIDC_APP_NAME).expect("Const app name should be valid"))
-            .behavior_version(BehaviorVersion::latest())
-            .region(sso_region.clone())
-            .build();
-        let oidc_client = OidcClient::new(&sdk_config);
-        let sso_client = SsoClient::new(&sdk_config);
-
         Self {
-            oidc_client,
-            sso_client,
+            api,
             cache_manager: cache_manager.into(),
             start_url: start_url.into(),
             retry_interval: retry_interval.unwrap_or(DEFAULT_CREATE_TOKEN_RETRY_INTERVAL),
@@ -190,12 +170,12 @@ where
         }
     }
 
-    async fn ensure_access_token(&mut self) -> Result<(), C::Error, L::Error> {
+    fn ensure_access_token(&mut self) -> Result<(), C::Error, L::Error> {
         if self.client_info.access_token.is_some() {
             return Ok(());
         }
         if self.client_info.refresh_token.is_some() {
-            match self.refresh_access_token().await {
+            match self.refresh_access_token() {
                 Ok(()) => {
                     self.cache_manager.clear_sessions();
                     return Ok(());
@@ -205,18 +185,18 @@ where
                 Err(_) => self.client_info.refresh_token = None,
             }
         }
-        self.create_access_token().await?;
+        self.create_access_token()?;
         self.cache_manager.clear_sessions();
         Ok(())
     }
 
-    async fn prepare_sso_and_resolve<T, F>(
+    fn prepare_sso_and_resolve<T, F>(
         &mut self,
         resolver: F,
         ignore_cache: bool,
     ) -> Result<T, C::Error, L::Error>
     where
-        F: AsyncFn(&mut Self) -> Result<T, C::Error, L::Error>,
+        F: Fn(&mut Self) -> Result<T, C::Error, L::Error>,
     {
         if let Some(ref mut ul) = self.upstream_lock {
             ul.load_lock().map_err(Error::LockProvider)?;
@@ -236,14 +216,14 @@ where
             || self.client_info.client_secret.is_none()
             || device_authorization_due
         {
-            self.register_client().await?;
+            self.register_client()?;
             self.client_info.access_token = None;
             self.client_info.refresh_token = None;
         }
         let access_token_from_cache = self.client_info.access_token.is_some();
-        self.ensure_access_token().await?;
+        self.ensure_access_token()?;
 
-        let mut result = resolver(self).await;
+        let mut result = resolver(self);
 
         // A token straight from the cache may have been revoked upstream since it was stored.
         // Bounded to one silent re-acquisition per manager because a forbidden role is
@@ -258,10 +238,10 @@ where
             self.client_info.access_token_expires_at = None;
             // Refreshed directly rather than through ensure_access_token, so a failure here can
             // never escalate to a device authorization in the middle of someone's command.
-            result = match self.refresh_access_token().await {
+            result = match self.refresh_access_token() {
                 Ok(()) => {
                     self.cache_manager.clear_sessions();
-                    resolver(self).await
+                    resolver(self)
                 }
                 Err(err) => {
                     self.client_info.refresh_token = None;
@@ -283,12 +263,12 @@ where
     }
 
     // TODO: Cache account roles
-    pub async fn list_accounts(
+    pub fn list_accounts(
         &mut self,
         ignore_cache: bool,
     ) -> Result<Vec<AccountInfo>, C::Error, L::Error> {
         self.prepare_sso_and_resolve(
-            async |auth| {
+            |auth| {
                 let access_token = auth
                     .client_info
                     .access_token
@@ -296,14 +276,13 @@ where
                     .expect(EXPECT_MESSAGE);
 
                 let accounts = auth
-                    .sso_client
-                    .list_accounts()
-                    .access_token(access_token)
-                    .into_paginator()
-                    .send()
-                    .collect::<std::result::Result<Vec<_>, _>>()
-                    .await
-                    .map_err(|err| Error::OidcListAccounts(Box::new(err)))?
+                    .api
+                    .list_accounts(input(
+                        ListAccountsInput::builder()
+                            .access_token(access_token)
+                            .build(),
+                    ))
+                    .map_err(Error::OidcListAccounts)?
                     .into_iter()
                     .filter_map(|res| res.account_list)
                     .flatten()
@@ -313,32 +292,30 @@ where
             },
             ignore_cache,
         )
-        .await
     }
 
     // TODO: Cache account roles
-    pub async fn list_account_roles(
+    pub fn list_account_roles(
         &mut self,
         account_id: &str,
         ignore_cache: bool,
     ) -> Result<Vec<RoleInfo>, C::Error, L::Error> {
         self.prepare_sso_and_resolve(
-            async |auth| {
+            |auth| {
                 let access_token = auth
                     .client_info
                     .access_token
                     .as_deref()
                     .expect(EXPECT_MESSAGE);
                 let roles = auth
-                    .sso_client
-                    .list_account_roles()
-                    .account_id(account_id)
-                    .access_token(access_token)
-                    .into_paginator()
-                    .send()
-                    .collect::<std::result::Result<Vec<_>, _>>()
-                    .await
-                    .map_err(|err| Error::OidcListAccountRoles(Box::new(err)))?
+                    .api
+                    .list_account_roles(input(
+                        ListAccountRolesInput::builder()
+                            .account_id(account_id)
+                            .access_token(access_token)
+                            .build(),
+                    ))
+                    .map_err(Error::OidcListAccountRoles)?
                     .into_iter()
                     .filter_map(|res| res.role_list)
                     .flatten()
@@ -347,10 +324,9 @@ where
             },
             ignore_cache,
         )
-        .await
     }
 
-    pub async fn assume_role(
+    pub fn assume_role(
         &mut self,
         account_id: &str,
         role_name: &str,
@@ -358,15 +334,15 @@ where
         ignore_cache: bool,
     ) -> Result<Credentials, C::Error, L::Error> {
         self.prepare_sso_and_resolve(
-            async |auth| {
+            |auth| {
                 let credentials = if refresh_sts_token {
-                    auth.resolve_credentials(role_name, account_id).await?
+                    auth.resolve_credentials(role_name, account_id)?
                 } else if let Some(cached_credentials) =
                     auth.cache_manager.get_session(account_id, role_name)
                 {
                     Credentials::from(cached_credentials.clone())
                 } else {
-                    auth.resolve_credentials(role_name, account_id).await?
+                    auth.resolve_credentials(role_name, account_id)?
                 };
                 auth.cache_manager
                     .set_session(account_id, role_name, credentials.clone());
@@ -374,7 +350,6 @@ where
             },
             ignore_cache,
         )
-        .await
     }
 
     pub fn load_cache(&mut self, ignore_cache: bool) {
@@ -390,16 +365,17 @@ where
         self.client_info.start_url = Some(self.start_url.clone());
     }
 
-    async fn register_client(&mut self) -> Result<(), C::Error, L::Error> {
+    fn register_client(&mut self) -> Result<(), C::Error, L::Error> {
         let register_client = self
-            .oidc_client
-            .register_client()
-            .client_name(OIDC_APP_NAME)
-            .client_type(OIDC_CLIENT_TYPE)
-            .scopes(OIDC_SCOPE)
-            .send()
-            .await
-            .map_err(|err| Error::OidcRegisterClient(Box::new(err)))?;
+            .api
+            .register_client(input(
+                RegisterClientInput::builder()
+                    .client_name(APP_NAME)
+                    .client_type(OIDC_CLIENT_TYPE)
+                    .scopes(OIDC_SCOPE)
+                    .build(),
+            ))
+            .map_err(Error::OidcRegisterClient)?;
 
         self.client_info.client_id = register_client.client_id;
         self.client_info.client_secret = register_client.client_secret;
@@ -409,21 +385,22 @@ where
         Ok(())
     }
 
-    async fn create_access_token(&mut self) -> Result<(), C::Error, L::Error> {
+    fn create_access_token(&mut self) -> Result<(), C::Error, L::Error> {
         let device_auth = self
-            .oidc_client
-            .start_device_authorization()
-            .client_id(self.client_info.client_id.as_deref().expect(EXPECT_MESSAGE))
-            .client_secret(
-                self.client_info
-                    .client_secret
-                    .as_deref()
-                    .expect(EXPECT_MESSAGE),
-            )
-            .start_url(&self.start_url)
-            .send()
-            .await
-            .map_err(|err| Error::OidcStartDeviceAuthorization(Box::new(err)))?;
+            .api
+            .start_device_authorization(input(
+                StartDeviceAuthorizationInput::builder()
+                    .client_id(self.client_info.client_id.as_deref().expect(EXPECT_MESSAGE))
+                    .client_secret(
+                        self.client_info
+                            .client_secret
+                            .as_deref()
+                            .expect(EXPECT_MESSAGE),
+                    )
+                    .start_url(&self.start_url)
+                    .build(),
+            ))
+            .map_err(Error::OidcStartDeviceAuthorization)?;
 
         let verification_uri = device_auth
             .verification_uri_complete
@@ -448,24 +425,22 @@ where
         let mut interval = poll_interval(self.retry_interval, device_interval);
         let deadline = Instant::now() + Duration::from_secs(device_auth.expires_in.max(0) as u64);
 
-        tokio::time::sleep(interval).await;
+        std::thread::sleep(interval);
 
         let create_token = loop {
-            match self
-                .oidc_client
-                .create_token()
-                .client_id(self.client_info.client_id.as_deref().expect(EXPECT_MESSAGE))
-                .client_secret(
-                    self.client_info
-                        .client_secret
-                        .as_deref()
-                        .expect(EXPECT_MESSAGE),
-                )
-                .grant_type(GRANT_TYPE)
-                .device_code(device_auth.device_code.as_deref().expect(EXPECT_MESSAGE))
-                .send()
-                .await
-            {
+            match self.api.create_token(input(
+                CreateTokenInput::builder()
+                    .client_id(self.client_info.client_id.as_deref().expect(EXPECT_MESSAGE))
+                    .client_secret(
+                        self.client_info
+                            .client_secret
+                            .as_deref()
+                            .expect(EXPECT_MESSAGE),
+                    )
+                    .grant_type(GRANT_TYPE)
+                    .device_code(device_auth.device_code.as_deref().expect(EXPECT_MESSAGE))
+                    .build(),
+            )) {
                 Ok(token) => break Ok(token),
                 Err(err) => {
                     let reached_endpoint = match err.as_service_error() {
@@ -478,7 +453,7 @@ where
                         // the window here is long enough that a dropped network is expected, so
                         // it is polled through rather than ending someone's login.
                         None if matches!(
-                            &err,
+                            err.as_ref(),
                             SdkError::DispatchFailure(_) | SdkError::TimeoutError(_)
                         ) =>
                         {
@@ -496,11 +471,11 @@ where
                         }
                         break Err(err);
                     }
-                    tokio::time::sleep(interval).await;
+                    std::thread::sleep(interval);
                 }
             }
         }
-        .map_err(|err| Error::OidcCreateToken(Box::new(err)))?;
+        .map_err(Error::OidcCreateToken)?;
 
         self.client_info.access_token = create_token.access_token;
         self.client_info.refresh_token = create_token.refresh_token;
@@ -516,27 +491,28 @@ where
         Ok(())
     }
 
-    async fn refresh_access_token(&mut self) -> Result<(), C::Error, L::Error> {
+    fn refresh_access_token(&mut self) -> Result<(), C::Error, L::Error> {
         let create_token = self
-            .oidc_client
-            .create_token()
-            .client_id(self.client_info.client_id.as_deref().expect(EXPECT_MESSAGE))
-            .client_secret(
-                self.client_info
-                    .client_secret
-                    .as_deref()
-                    .expect(EXPECT_MESSAGE),
-            )
-            .grant_type("refresh_token")
-            .refresh_token(
-                self.client_info
-                    .refresh_token
-                    .as_deref()
-                    .expect(EXPECT_MESSAGE),
-            )
-            .send()
-            .await
-            .map_err(|err| Error::OidcTokenRefreshFailed(Box::new(err)))?;
+            .api
+            .create_token(input(
+                CreateTokenInput::builder()
+                    .client_id(self.client_info.client_id.as_deref().expect(EXPECT_MESSAGE))
+                    .client_secret(
+                        self.client_info
+                            .client_secret
+                            .as_deref()
+                            .expect(EXPECT_MESSAGE),
+                    )
+                    .grant_type("refresh_token")
+                    .refresh_token(
+                        self.client_info
+                            .refresh_token
+                            .as_deref()
+                            .expect(EXPECT_MESSAGE),
+                    )
+                    .build(),
+            ))
+            .map_err(Error::OidcTokenRefreshFailed)?;
         self.client_info.access_token = create_token.access_token;
         self.client_info.refresh_token = create_token.refresh_token;
         self.client_info.access_token_expires_at =
@@ -544,25 +520,26 @@ where
         Ok(())
     }
 
-    async fn resolve_credentials(
+    fn resolve_credentials(
         &self,
         role_name: &str,
         account_id: &str,
     ) -> Result<Credentials, C::Error, L::Error> {
         let credentials = self
-            .sso_client
-            .get_role_credentials()
-            .role_name(role_name)
-            .account_id(account_id)
-            .access_token(
-                self.client_info
-                    .access_token
-                    .as_deref()
-                    .expect(EXPECT_MESSAGE),
-            )
-            .send()
-            .await
-            .map_err(|err| Error::SsoGetRoleCredentials(Box::new(err)))?
+            .api
+            .get_role_credentials(input(
+                GetRoleCredentialsInput::builder()
+                    .role_name(role_name)
+                    .account_id(account_id)
+                    .access_token(
+                        self.client_info
+                            .access_token
+                            .as_deref()
+                            .expect(EXPECT_MESSAGE),
+                    )
+                    .build(),
+            ))
+            .map_err(Error::SsoGetRoleCredentials)?
             .role_credentials
             .expect("Exit early if GetRoleCredentials fails, role credentials should be present");
 
@@ -583,15 +560,12 @@ where
         ))
     }
 
-    pub async fn logout(mut self) -> Result<(), C::Error, L::Error> {
+    pub fn logout(mut self) -> Result<(), C::Error, L::Error> {
         self.cache_manager.load_cache().map_err(Error::Cache)?;
         if let Some(access_token) = self.cache_manager.get_access_token() {
-            let _ = self
-                .sso_client
-                .logout()
-                .access_token(access_token)
-                .send()
-                .await;
+            let _ = self.api.logout(input(
+                LogoutInput::builder().access_token(access_token).build(),
+            ));
         }
         self.cache_manager.cache_reset();
         self.cache_manager.commit().map_err(Error::Cache)?;
@@ -604,40 +578,5 @@ where
     }
 }
 
-// Tests were written by AI (Claude Opus 5), not reviewed by Author
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn aws_wins_when_it_asks_for_slower_polling_than_configured() {
-        assert_eq!(
-            poll_interval(Duration::from_secs(5), Duration::from_secs(30)),
-            Duration::from_secs(30)
-        );
-    }
-
-    #[test]
-    fn the_configured_interval_wins_when_it_is_the_slower_of_the_two() {
-        assert_eq!(
-            poll_interval(Duration::from_secs(30), Duration::from_secs(5)),
-            Duration::from_secs(30)
-        );
-    }
-
-    #[test]
-    fn a_zero_from_either_side_never_yields_a_sleepless_poll() {
-        assert_eq!(
-            poll_interval(Duration::ZERO, Duration::ZERO),
-            Duration::from_secs(1)
-        );
-    }
-
-    #[test]
-    fn the_default_interval_clears_the_floor_untouched() {
-        assert_eq!(
-            poll_interval(DEFAULT_CREATE_TOKEN_RETRY_INTERVAL, Duration::ZERO),
-            DEFAULT_CREATE_TOKEN_RETRY_INTERVAL
-        );
-    }
-}
+mod tests;

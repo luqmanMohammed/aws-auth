@@ -88,7 +88,7 @@ impl Job for ExecJob {
     }
 }
 
-fn exec<W1: Write + Send + 'static, W2: Write + Send + 'static>(
+fn exec<W1: Write + Send, W2: Write + Send>(
     account_id: &str,
     arguments: &[String],
     credentials: Credentials,

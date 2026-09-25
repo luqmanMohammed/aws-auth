@@ -26,7 +26,7 @@ pub trait TabularFormatter<C>
 where
     C: std::fmt::Display,
 {
-    type Error: std::error::Error + 'static;
+    type Error: std::error::Error;
     fn format<'r, I, O>(&self, headers: &'r [&'r str], rows: O) -> Result<String, Self::Error>
     where
         C: 'r,

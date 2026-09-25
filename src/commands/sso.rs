@@ -24,14 +24,14 @@ impl From<AwsSsoManagerError> for Error {
     }
 }
 
-pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
+pub fn exec_sso(subcommand: Sso) -> Result<(), Error> {
     match subcommand {
         Sso::ListAccounts { common, formatting } => {
             let config_dir = resolve_config_dir(common.config_dir.as_deref())?;
             let mut sso_manager =
                 build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref())?;
 
-            let accounts = sso_manager.list_accounts(common.ignore_cache).await?;
+            let accounts = sso_manager.list_accounts(common.ignore_cache)?;
 
             let omit_fields: Vec<&str> =
                 formatting.omit_fields.iter().map(|v| v.as_str()).collect();
@@ -80,9 +80,7 @@ pub async fn exec_sso(subcommand: Sso) -> Result<(), Error> {
             let mut sso_manager =
                 build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref())?;
 
-            let roles = sso_manager
-                .list_account_roles(&account, common.ignore_cache)
-                .await?;
+            let roles = sso_manager.list_account_roles(&account, common.ignore_cache)?;
 
             let omit_fields: Vec<&str> =
                 formatting.omit_fields.iter().map(|v| v.as_str()).collect();
