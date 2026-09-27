@@ -4,7 +4,7 @@ use super::*;
 use crate::aws_sso::api::ApiResult;
 use crate::aws_sso::cache::Cache;
 use crate::aws_sso::directory::{DirectoryCache, ListingCache};
-use crate::utils::lock::DecayingJsonCounterLockProvider;
+use crate::utils::lockout::Lockout;
 use crate::utils::test_support::TempDir;
 use aws_sdk_sso::operation::get_role_credentials::GetRoleCredentialsOutput;
 use aws_sdk_sso::operation::list_account_roles::ListAccountRolesOutput;
@@ -20,6 +20,7 @@ use aws_sdk_ssooidc::types::error::{
 use aws_smithy_runtime_api::client::result::ConnectorError;
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::num::NonZeroU64;
 use std::time::SystemTime;
 
 const START_URL: &str = "https://example.awsapps.com/start";
@@ -134,13 +135,9 @@ impl ManageCache for MemCache {
     }
 }
 
-type Manager = AuthManager<'static, MemCache, DecayingJsonCounterLockProvider, FakeAws>;
+type Manager = AuthManager<'static, MemCache, FakeAws>;
 
-fn manager(
-    cache: MemCache,
-    api: FakeAws,
-    lock: Option<DecayingJsonCounterLockProvider>,
-) -> Manager {
+fn manager(cache: MemCache, api: FakeAws, lockout: Option<Lockout>) -> Manager {
     AuthManager::new(
         api,
         cache,
@@ -149,7 +146,7 @@ fn manager(
         Some(Box::new(std::io::sink())),
         true,
         true,
-        lock,
+        lockout,
     )
 }
 
@@ -168,8 +165,29 @@ fn cached(access_token: Option<&str>, refresh_token: Option<&str>) -> MemCache {
     cache
 }
 
-fn lock(dir: &TempDir, threshold: u64) -> DecayingJsonCounterLockProvider {
-    DecayingJsonCounterLockProvider::new(dir.path(), "lock", threshold, None)
+fn lockout(dir: &TempDir, threshold: u64) -> Lockout {
+    Lockout::new(
+        dir.path(),
+        "lock",
+        NonZeroU64::new(threshold).expect("non-zero threshold"),
+        None,
+    )
+}
+
+fn fail(lockout: &mut Lockout) {
+    let mut loaded = lockout.load().unwrap();
+    loaded.increment();
+    loaded.save().unwrap();
+}
+
+fn is_locked(manager: &mut Manager) -> bool {
+    manager
+        .lockout
+        .as_mut()
+        .unwrap()
+        .load()
+        .unwrap()
+        .is_locked()
 }
 
 fn service_error<E>(err: E) -> Box<SdkError<E, Response>> {
@@ -245,7 +263,7 @@ fn unauthorized() -> ApiResult<GetRoleCredentialsOutput, GetRoleCredentialsError
     ))
 }
 
-fn assume(manager: &mut Manager) -> Result<Credentials, std::io::Error, std::io::Error> {
+fn assume(manager: &mut Manager) -> Result<Credentials, std::io::Error> {
     manager.assume_role("111111111111", "Admin", false, false)
 }
 
@@ -462,19 +480,12 @@ fn a_slow_down_past_the_code_expiry_ends_the_login_and_counts_against_the_lock()
     api.create_token.borrow_mut().push_back(Err(service_error(
         CreateTokenError::SlowDownException(SlowDownException::builder().build()),
     )));
-    let mut manager = manager(MemCache::default(), api, Some(lock(&dir, 1)));
+    let mut manager = manager(MemCache::default(), api, Some(lockout(&dir, 1)));
 
     let err = assume(&mut manager).expect_err("the backoff outlasts the code");
 
     assert!(matches!(err, Error::OidcCreateToken(_)));
-    assert!(
-        manager
-            .upstream_lock
-            .as_ref()
-            .unwrap()
-            .get_lock()
-            .is_locked()
-    );
+    assert!(is_locked(&mut manager));
 }
 
 #[test]
@@ -488,28 +499,25 @@ fn a_final_poll_that_never_reached_aws_does_not_count_against_the_lock() {
     api.create_token
         .borrow_mut()
         .push_back(Err(dispatch_failure()));
-    let mut manager = manager(MemCache::default(), api, Some(lock(&dir, 1)));
+    let mut manager = manager(MemCache::default(), api, Some(lockout(&dir, 1)));
 
     assume(&mut manager).expect_err("the code has expired");
 
     assert!(
-        manager
-            .upstream_lock
-            .as_ref()
-            .unwrap()
-            .get_lock()
-            .is_clear()
+        !is_locked(&mut manager),
+        "a threshold of one would lock on any count"
     );
 }
 
 #[test]
 fn a_locked_upstream_fails_before_calling_aws() {
     let dir = TempDir::new("auth-locked");
-    let mut held = lock(&dir, 1);
-    held.load_lock().unwrap();
-    held.get_lock_mut().increment(1);
-    held.save_lock().unwrap();
-    let mut manager = manager(MemCache::default(), FakeAws::default(), Some(lock(&dir, 1)));
+    fail(&mut lockout(&dir, 1));
+    let mut manager = manager(
+        MemCache::default(),
+        FakeAws::default(),
+        Some(lockout(&dir, 1)),
+    );
 
     let err = assume(&mut manager).expect_err("the lock should hold");
 
@@ -520,10 +528,7 @@ fn a_locked_upstream_fails_before_calling_aws() {
 #[test]
 fn a_completed_login_clears_the_lock_count() {
     let dir = TempDir::new("auth-lock-reset");
-    let mut held = lock(&dir, 3);
-    held.load_lock().unwrap();
-    held.get_lock_mut().increment(1);
-    held.save_lock().unwrap();
+    fail(&mut lockout(&dir, 2));
     let api = FakeAws::default();
     api.register_client.borrow_mut().push_back(registered());
     api.start_device_authorization
@@ -533,17 +538,14 @@ fn a_completed_login_clears_the_lock_count() {
     api.get_role_credentials
         .borrow_mut()
         .push_back(role_credentials());
-    let mut manager = manager(MemCache::default(), api, Some(lock(&dir, 3)));
+    let mut manager = manager(MemCache::default(), api, Some(lockout(&dir, 2)));
 
     assume(&mut manager).expect("login should succeed");
 
+    fail(manager.lockout.as_mut().unwrap());
     assert!(
-        manager
-            .upstream_lock
-            .as_ref()
-            .unwrap()
-            .get_lock()
-            .is_clear()
+        !is_locked(&mut manager),
+        "one failure of two would lock had the earlier one survived"
     );
 }
 
