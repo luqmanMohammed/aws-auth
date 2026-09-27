@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/luqmanMohammed/aws-auth/compare/v0.4.0...v0.5.0) - 2026-09-27
+
+### Added
+
+- cache listed SSO accounts and roles with an accountCacheTtl config and a --refresh-list flag
+- accept human-friendly durations such as 3h or 30m on the CLI duration flags
+
+### Changed
+
+- replace the lock provider trait with a typestate Lockout built on Expiring
+- store retryInterval as a jiff duration and migrate its legacy format on load
+- replace chrono with jiff and migrate legacy lock decay configs on load
+- move the AWS SDK behind a blocking AwsApi trait and drop async everywhere else
+
+### Fixed
+
+- cap --eks-expiry at 15m, the longest token EKS accepts
+- let logout recover from an unreadable SSO cache and clear the listing cache on a new sign-in
+- clear the create-token lock count on a completed authorization
+- poll device authorization until the device code expires
+
 ## [0.4.0](https://github.com/luqmanMohammed/aws-auth/compare/v0.3.1...v0.4.0) - 2026-08-27
 
 ### Added
