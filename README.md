@@ -114,7 +114,7 @@ users:
 
 Tokens are cached per account, role, region and cluster under `<config-dir>/eks`, and
 entries left untouched for seven days are cleaned up. `--eks-expiry` tunes the
-token lifetime, such as `15m` or `1h` (1s to 7d, default 14m20s).
+token lifetime, such as `5m` or `10m` (1s to 15m, the longest EKS accepts; default 14m20s).
 
 ### batch exec
 

@@ -108,10 +108,10 @@ fn parse_duration(s: &str) -> Result<SignedDuration, String> {
 
 fn parse_eks_expiry(s: &str) -> Result<SignedDuration, String> {
     let expiry = parse_duration(s)?;
-    if (SignedDuration::from_secs(1)..=SignedDuration::from_hours(7 * 24)).contains(&expiry) {
+    if (SignedDuration::from_secs(1)..=SignedDuration::from_mins(15)).contains(&expiry) {
         Ok(expiry)
     } else {
-        Err("must be between 1s and 7d, the AWS signing maximum".to_string())
+        Err("must be between 1s and 15m, the longest EKS accepts".to_string())
     }
 }
 
@@ -314,7 +314,7 @@ pub enum CoreCommands {
         #[arg(long)]
         eks_cache_dir: Option<PathBuf>,
 
-        /// Token expiration time, such as 15m or 1h (1s to 7d, the AWS signing maximum)
+        /// Token expiration time, such as 5m or 10m (1s to 15m, the longest EKS accepts)
         /// Plain numbers are seconds.
         /// Default: 14m20s
         #[arg(long, alias = "eks-expiry-seconds", value_parser = parse_eks_expiry)]
@@ -663,14 +663,15 @@ mod tests {
     }
 
     #[test]
-    fn the_eks_expiry_is_bounded_by_the_aws_signing_maximum() {
+    fn the_eks_expiry_is_bounded_by_what_eks_accepts() {
         assert_eq!(parse_eks_expiry("1s"), Ok(SignedDuration::from_secs(1)));
-        assert_eq!(
-            parse_eks_expiry("168h"),
-            Ok(SignedDuration::from_hours(168))
-        );
+        assert_eq!(parse_eks_expiry("15m"), Ok(SignedDuration::from_mins(15)));
         assert!(parse_eks_expiry("0").is_err());
-        assert!(parse_eks_expiry("604801").is_err());
+        assert!(
+            parse_eks_expiry("901").is_err(),
+            "EKS rejects a token signed with an X-Amz-Expires above 900"
+        );
+        assert!(parse_eks_expiry("1h").is_err());
     }
 
     #[test]
