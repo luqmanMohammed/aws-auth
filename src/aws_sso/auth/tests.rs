@@ -1,8 +1,9 @@
-// Tests were written by AI (Claude Opus 5), not reviewed by Author
+// Tests were written by AI (Claude Opus 5, Claude Opus 5.5), not reviewed by Author
 
 use super::*;
 use crate::aws_sso::api::ApiResult;
 use crate::aws_sso::cache::Cache;
+use crate::aws_sso::directory::{DirectoryCache, ListingCache};
 use crate::utils::lock::DecayingJsonCounterLockProvider;
 use crate::utils::test_support::TempDir;
 use aws_sdk_sso::operation::get_role_credentials::GetRoleCredentialsOutput;
@@ -32,6 +33,8 @@ struct FakeAws {
         Script<StartDeviceAuthorizationOutput, StartDeviceAuthorizationError>,
     create_token: Script<CreateTokenOutput, CreateTokenError>,
     get_role_credentials: Script<GetRoleCredentialsOutput, GetRoleCredentialsError>,
+    list_accounts: Script<Vec<ListAccountsOutput>, ListAccountsError>,
+    list_account_roles: Script<Vec<ListAccountRolesOutput>, ListAccountRolesError>,
     calls: RefCell<Vec<&'static str>>,
     create_token_inputs: RefCell<Vec<CreateTokenInput>>,
     role_access_tokens: RefCell<Vec<String>>,
@@ -81,14 +84,14 @@ impl AwsApi for FakeAws {
         &self,
         _: ListAccountsInput,
     ) -> ApiResult<Vec<ListAccountsOutput>, ListAccountsError> {
-        unimplemented!("not exercised")
+        self.next("list_accounts", &self.list_accounts)
     }
 
     fn list_account_roles(
         &self,
         _: ListAccountRolesInput,
     ) -> ApiResult<Vec<ListAccountRolesOutput>, ListAccountRolesError> {
-        unimplemented!("not exercised")
+        self.next("list_account_roles", &self.list_account_roles)
     }
 
     fn get_role_credentials(
@@ -569,5 +572,171 @@ fn the_default_interval_clears_the_floor_untouched() {
     assert_eq!(
         poll_interval(DEFAULT_CREATE_TOKEN_RETRY_INTERVAL, Duration::ZERO),
         DEFAULT_CREATE_TOKEN_RETRY_INTERVAL
+    );
+}
+
+fn with_directory(manager: Manager, dir: &TempDir) -> Manager {
+    manager.with_directory_cache(DirectoryCache::new(
+        dir.path(),
+        START_URL,
+        SignedDuration::from_hours(1),
+    ))
+}
+
+fn accounts(ids: &[&str]) -> ApiResult<Vec<ListAccountsOutput>, ListAccountsError> {
+    Ok(vec![
+        ListAccountsOutput::builder()
+            .set_account_list(Some(
+                ids.iter()
+                    .map(|id| AccountInfo::builder().account_id(*id).build())
+                    .collect(),
+            ))
+            .build(),
+    ])
+}
+
+fn roles(names: &[&str]) -> ApiResult<Vec<ListAccountRolesOutput>, ListAccountRolesError> {
+    Ok(vec![
+        ListAccountRolesOutput::builder()
+            .set_role_list(Some(
+                names
+                    .iter()
+                    .map(|name| RoleInfo::builder().role_name(*name).build())
+                    .collect(),
+            ))
+            .build(),
+    ])
+}
+
+fn account_ids(accounts: &[AccountInfo]) -> Vec<&str> {
+    accounts
+        .iter()
+        .filter_map(AccountInfo::account_id)
+        .collect()
+}
+
+#[test]
+fn listed_accounts_are_served_from_the_directory_cache_without_signing_in() {
+    let dir = TempDir::new("auth-directory-accounts");
+    let api = FakeAws::default();
+    api.list_accounts
+        .borrow_mut()
+        .push_back(accounts(&["1", "2"]));
+    let mut first = with_directory(manager(cached(Some("cached"), None), api, None), &dir);
+    first
+        .list_accounts(ListingCache::Use)
+        .expect("listing should succeed");
+
+    let mut second = with_directory(manager(MemCache::default(), FakeAws::default(), None), &dir);
+    let listed = second
+        .list_accounts(ListingCache::Use)
+        .expect("the cache should answer");
+
+    assert_eq!(account_ids(&listed), ["1", "2"]);
+    assert!(second.api.calls().is_empty(), "no sign-in and no listing");
+}
+
+#[test]
+fn listed_roles_are_served_from_the_directory_cache_per_account() {
+    let dir = TempDir::new("auth-directory-roles");
+    let api = FakeAws::default();
+    api.list_account_roles
+        .borrow_mut()
+        .push_back(roles(&["Admin"]));
+    let mut first = with_directory(manager(cached(Some("cached"), None), api, None), &dir);
+    first
+        .list_account_roles("1", ListingCache::Use)
+        .expect("listing should succeed");
+
+    let mut second = with_directory(manager(MemCache::default(), FakeAws::default(), None), &dir);
+    let listed = second
+        .list_account_roles("1", ListingCache::Use)
+        .expect("the cache should answer");
+
+    assert_eq!(listed[0].role_name(), Some("Admin"));
+    assert!(second.api.calls().is_empty());
+}
+
+#[test]
+fn ignoring_the_cache_lists_again_and_replaces_the_directory() {
+    let dir = TempDir::new("auth-directory-ignore");
+    let api = FakeAws::default();
+    api.list_accounts.borrow_mut().push_back(accounts(&["1"]));
+    let mut first = with_directory(manager(cached(Some("cached"), None), api, None), &dir);
+    first
+        .list_accounts(ListingCache::Use)
+        .expect("listing should succeed");
+
+    let api = FakeAws::default();
+    api.register_client.borrow_mut().push_back(registered());
+    api.start_device_authorization
+        .borrow_mut()
+        .push_back(device_authorization(600));
+    api.create_token.borrow_mut().push_back(token("fresh"));
+    api.list_accounts.borrow_mut().push_back(accounts(&["2"]));
+    let mut second = with_directory(manager(MemCache::default(), api, None), &dir);
+    let listed = second
+        .list_accounts(ListingCache::Ignore)
+        .expect("listing should succeed");
+    assert_eq!(account_ids(&listed), ["2"]);
+
+    let mut third = with_directory(manager(MemCache::default(), FakeAws::default(), None), &dir);
+    assert_eq!(
+        account_ids(
+            &third
+                .list_accounts(ListingCache::Use)
+                .expect("the cache should answer")
+        ),
+        ["2"]
+    );
+}
+
+#[test]
+fn a_failed_listing_is_not_cached() {
+    let dir = TempDir::new("auth-directory-failure");
+    let api = FakeAws::default();
+    api.list_accounts
+        .borrow_mut()
+        .push_back(Err(dispatch_failure()));
+    let mut manager = with_directory(manager(cached(Some("cached"), None), api, None), &dir);
+
+    manager
+        .list_accounts(ListingCache::Use)
+        .expect_err("the listing failure should surface");
+
+    assert!(!dir.join("sso-directory.json").exists());
+}
+
+#[test]
+fn refreshing_the_list_keeps_the_sign_in_and_replaces_the_directory() {
+    let dir = TempDir::new("auth-directory-refresh");
+    let api = FakeAws::default();
+    api.list_accounts.borrow_mut().push_back(accounts(&["1"]));
+    let mut first = with_directory(manager(cached(Some("cached"), None), api, None), &dir);
+    first
+        .list_accounts(ListingCache::Use)
+        .expect("listing should succeed");
+
+    let api = FakeAws::default();
+    api.list_accounts.borrow_mut().push_back(accounts(&["2"]));
+    let mut second = with_directory(manager(cached(Some("cached"), None), api, None), &dir);
+    let listed = second
+        .list_accounts(ListingCache::Refresh)
+        .expect("listing should succeed");
+
+    assert_eq!(account_ids(&listed), ["2"]);
+    assert_eq!(
+        second.api.calls(),
+        ["list_accounts"],
+        "the cached sign-in is reused, so no registration or device authorization"
+    );
+    let mut third = with_directory(manager(MemCache::default(), FakeAws::default(), None), &dir);
+    assert_eq!(
+        account_ids(
+            &third
+                .list_accounts(ListingCache::Use)
+                .expect("the cache should answer")
+        ),
+        ["2"]
     );
 }

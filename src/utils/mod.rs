@@ -1,4 +1,5 @@
 pub mod elog;
+pub mod expiring;
 pub mod formatters;
 pub mod lock;
 pub mod private_fs;

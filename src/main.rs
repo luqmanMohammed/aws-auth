@@ -47,6 +47,7 @@ fn run() -> Result<(), String> {
             recreate,
             create_token_retry_threshold,
             create_token_lock_decay,
+            account_cache_ttl,
             update,
             no_browser,
         } => {
@@ -57,6 +58,7 @@ fn run() -> Result<(), String> {
                 sso_region,
                 retry_interval,
                 create_token_lock_decay,
+                account_cache_ttl,
                 create_token_retry_threshold,
                 update,
                 no_browser,

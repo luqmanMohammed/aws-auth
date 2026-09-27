@@ -65,7 +65,7 @@ Every credential-taking command accepts either `-a <account-id> -r <role>` or
 | `-C`, `--config-dir` | Config directory. Also read from `AWS_AUTH_CONFIG_DIR`. Defaults to `~/.aws-auth` |
 | `-R`, `--region` | AWS region for the credentials. Defaults to `eu-west-2` |
 | `-t`, `--refresh-sts-token` | Ignore the cached role credentials and fetch new ones |
-| `-i`, `--ignore-cache` | Discard the SSO client registration too, forcing a new device authorization |
+| `-i`, `--ignore-cache` | Discard the SSO client registration too, forcing a new device authorization. On `sso` and `batch` listings it also refetches the cached accounts and roles; use `--refresh-list` there to refetch them while keeping the current sign-in |
 
 `--help` on any subcommand lists the rest.
 
@@ -167,6 +167,7 @@ an unrecognised name is an error rather than being ignored.
   "retryInterval": { "secs": 5, "nanos": 0 },
   "createTokenRetryThreshold": 5,
   "createTokenLockDecay": "PT2H",
+  "accountCacheTtl": "PT24H",
   "noBrowser": false
 }
 ```
@@ -174,7 +175,8 @@ an unrecognised name is an error rather than being ignored.
 Only `startURL` and `ssoRegion` are required, and they must be non-empty.
 `createTokenLockDecay` is an ISO 8601 duration such as `"PT2H"` (a friendly `"2h"` is
 accepted too) and may not be negative — use `"PT0S"` to keep a lock until `aws-auth
-unlock` clears it. A config still holding the older `[secs, nanos]` form is rewritten in
+unlock` clears it. `accountCacheTtl` is how long listed accounts and roles are reused
+without asking AWS, in the same format; `"PT0S"` disables that cache. A config still holding the older `[secs, nanos]` form is rewritten in
 the current one the next time it is loaded. An invalid value is rejected on load rather than silently ignored. Set
 any of them with `aws-auth init --update`, whose duration flags take values such as `30s`,
 `5m`, `3h` or `1d` (a plain number is seconds), for example:
@@ -184,7 +186,8 @@ aws-auth init --update --retry-interval 10s --create-token-lock-decay 3h --no-br
 ```
 
 Alongside it live `aliases.json` (your aliases), `cache.json` (the SSO session and
-cached role credentials), `aws-sso-create-token-lock.json`, and `eks/`.
+cached role credentials), `sso-directory.json` (listed accounts and roles, cleared by
+`aws-auth logout`), `aws-sso-create-token-lock.json`, and `eks/`.
 
 ## Headless hosts
 

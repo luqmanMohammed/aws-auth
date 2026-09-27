@@ -1,4 +1,4 @@
-use crate::aws_sso::{AwsSsoManagerError, ConfigError, build_sso_mgr_cached};
+use crate::aws_sso::{AwsSsoManagerError, ConfigError, ListingCache, build_sso_mgr_cached};
 use crate::cmd::Sso;
 use crate::utils::formatters;
 use crate::utils::{
@@ -31,7 +31,10 @@ pub fn exec_sso(subcommand: Sso) -> Result<(), Error> {
             let mut sso_manager =
                 build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref())?;
 
-            let accounts = sso_manager.list_accounts(common.ignore_cache)?;
+            let accounts = sso_manager.list_accounts(ListingCache::from_flags(
+                common.ignore_cache,
+                common.refresh_list,
+            ))?;
 
             let omit_fields: Vec<&str> =
                 formatting.omit_fields.iter().map(|v| v.as_str()).collect();
@@ -80,7 +83,10 @@ pub fn exec_sso(subcommand: Sso) -> Result<(), Error> {
             let mut sso_manager =
                 build_sso_mgr_cached(&config_dir, common.sso_cache_dir.as_deref())?;
 
-            let roles = sso_manager.list_account_roles(&account, common.ignore_cache)?;
+            let roles = sso_manager.list_account_roles(
+                &account,
+                ListingCache::from_flags(common.ignore_cache, common.refresh_list),
+            )?;
 
             let omit_fields: Vec<&str> =
                 formatting.omit_fields.iter().map(|v| v.as_str()).collect();

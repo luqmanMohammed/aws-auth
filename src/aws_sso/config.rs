@@ -8,6 +8,7 @@ use std::{
 
 const DEFAULT_CREATE_TOKEN_LOCK_THRESHOLD: u64 = 5;
 const DEFAULT_CREATE_TOKEN_LOCK_DECAY: SignedDuration = SignedDuration::from_hours(2);
+const DEFAULT_ACCOUNT_CACHE_TTL: SignedDuration = SignedDuration::from_hours(24);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -42,6 +43,8 @@ pub struct UnverifiedSsoConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub create_token_lock_decay: Option<SignedDuration>,
+    #[serde(rename = "accountCacheTtl", skip_serializing_if = "Option::is_none")]
+    pub account_cache_ttl: Option<SignedDuration>,
     #[serde(rename = "noBrowser", skip_serializing_if = "Option::is_none")]
     pub no_browser: Option<bool>,
 }
@@ -54,6 +57,7 @@ impl UnverifiedSsoConfig {
             retry_interval: None,
             create_token_retry_threshold: None,
             create_token_lock_decay: None,
+            account_cache_ttl: None,
             no_browser: None,
         }
     }
@@ -110,12 +114,19 @@ impl UnverifiedSsoConfig {
                 "must not be negative; use 0 to disable decay",
             ));
         }
+        if self.account_cache_ttl.is_some_and(|ttl| ttl.is_negative()) {
+            return Err(Error::InvalidField(
+                "accountCacheTtl",
+                "must not be negative; use 0 to disable caching",
+            ));
+        }
         Ok(AwsSsoConfig(self))
     }
 }
 
 /// Only reachable through [`UnverifiedSsoConfig::verify`], so `startURL` and `ssoRegion` are
-/// non-empty here and neither `retryInterval` nor `createTokenLockDecay` is negative.
+/// non-empty here and none of `retryInterval`, `createTokenLockDecay` or `accountCacheTtl` is
+/// negative.
 ///
 /// The accessors returning a bare value resolve their default here. `retryInterval` is defaulted
 /// by `AuthManager::new` instead, which owns the polling constants it applies whether or not a
@@ -148,6 +159,15 @@ impl AwsSsoConfig {
             Some(decay) if decay.as_secs() == 0 => None,
             Some(decay) => Some(decay),
             None => Some(DEFAULT_CREATE_TOKEN_LOCK_DECAY),
+        }
+    }
+
+    /// `None` once the configured TTL is zero, which disables caching accounts and roles.
+    pub fn account_cache_ttl(&self) -> Option<SignedDuration> {
+        match self.0.account_cache_ttl {
+            Some(ttl) if ttl.is_zero() => None,
+            Some(ttl) => Some(ttl),
+            None => Some(DEFAULT_ACCOUNT_CACHE_TTL),
         }
     }
 
@@ -266,6 +286,52 @@ mod tests {
         assert_eq!(
             config.create_token_lock_decay(),
             Some(DEFAULT_CREATE_TOKEN_LOCK_DECAY)
+        );
+    }
+
+    #[test]
+    fn a_negative_account_cache_ttl_is_rejected() {
+        let mut config = config(None);
+        config.account_cache_ttl = Some(SignedDuration::from_secs(-1));
+
+        let err = config
+            .verify()
+            .expect_err("a negative ttl can never be honoured");
+
+        assert!(
+            matches!(err, Error::InvalidField("accountCacheTtl", _)),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_zero_account_cache_ttl_disables_caching() {
+        let mut config = config(None);
+        config.account_cache_ttl = Some(SignedDuration::ZERO);
+
+        assert_eq!(config.verify().unwrap().account_cache_ttl(), None);
+    }
+
+    #[test]
+    fn an_absent_account_cache_ttl_falls_back_to_the_default() {
+        assert_eq!(
+            config(None).verify().unwrap().account_cache_ttl(),
+            Some(DEFAULT_ACCOUNT_CACHE_TTL)
+        );
+    }
+
+    #[test]
+    fn an_account_cache_ttl_round_trips_as_an_iso_8601_duration() {
+        let mut config = config(None);
+        config.account_cache_ttl = Some(SignedDuration::from_hours(3));
+        let json = serde_json::to_value(config).expect("config should serialize");
+
+        assert_eq!(json["accountCacheTtl"], "PT3H");
+        assert_eq!(
+            UnverifiedSsoConfig::from_slice(json.to_string().as_bytes())
+                .expect("config should parse")
+                .account_cache_ttl,
+            Some(SignedDuration::from_hours(3))
         );
     }
 

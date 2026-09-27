@@ -1,5 +1,6 @@
 use super::api::{APP_NAME, AwsApi};
 use super::cache::CacheRefMut;
+use super::directory::{DirectoryCache, ListingCache};
 use crate::aws_sso::cache::ManageCache;
 use crate::aws_sso::types::ClientInformation;
 use crate::utils::lock::CounterLockProvider;
@@ -127,6 +128,7 @@ where
     start_url: String,
     retry_interval: Duration,
     upstream_lock: Option<L>,
+    directory_cache: Option<DirectoryCache>,
 
     client_info: ClientInformation,
     code_writer: Box<dyn std::io::Write>,
@@ -166,8 +168,14 @@ where
             handle_cache,
             no_browser,
             upstream_lock,
+            directory_cache: None,
             access_token_reacquired: false,
         }
+    }
+
+    pub fn with_directory_cache(mut self, directory_cache: DirectoryCache) -> Self {
+        self.directory_cache = Some(directory_cache);
+        self
     }
 
     fn ensure_access_token(&mut self) -> Result<(), C::Error, L::Error> {
@@ -262,12 +270,19 @@ where
         result
     }
 
-    // TODO: Cache account roles
     pub fn list_accounts(
         &mut self,
-        ignore_cache: bool,
+        listing_cache: ListingCache,
     ) -> Result<Vec<AccountInfo>, C::Error, L::Error> {
-        self.prepare_sso_and_resolve(
+        if listing_cache == ListingCache::Use
+            && let Some(accounts) = self
+                .directory_cache
+                .as_ref()
+                .and_then(DirectoryCache::accounts)
+        {
+            return Ok(accounts);
+        }
+        let accounts: Vec<AccountInfo> = self.prepare_sso_and_resolve(
             |auth| {
                 let access_token = auth
                     .client_info
@@ -290,17 +305,28 @@ where
 
                 Ok(accounts)
             },
-            ignore_cache,
-        )
+            listing_cache == ListingCache::Ignore,
+        )?;
+        if let Some(directory_cache) = &self.directory_cache {
+            directory_cache.record_accounts(&accounts, listing_cache != ListingCache::Use);
+        }
+        Ok(accounts)
     }
 
-    // TODO: Cache account roles
     pub fn list_account_roles(
         &mut self,
         account_id: &str,
-        ignore_cache: bool,
+        listing_cache: ListingCache,
     ) -> Result<Vec<RoleInfo>, C::Error, L::Error> {
-        self.prepare_sso_and_resolve(
+        if listing_cache == ListingCache::Use
+            && let Some(roles) = self
+                .directory_cache
+                .as_ref()
+                .and_then(|directory_cache| directory_cache.roles(account_id))
+        {
+            return Ok(roles);
+        }
+        let roles: Vec<RoleInfo> = self.prepare_sso_and_resolve(
             |auth| {
                 let access_token = auth
                     .client_info
@@ -322,8 +348,12 @@ where
                     .collect();
                 Ok(roles)
             },
-            ignore_cache,
-        )
+            listing_cache == ListingCache::Ignore,
+        )?;
+        if let Some(directory_cache) = &self.directory_cache {
+            directory_cache.record_roles(account_id, &roles, listing_cache != ListingCache::Use);
+        }
+        Ok(roles)
     }
 
     pub fn assume_role(
@@ -569,6 +599,11 @@ where
         }
         self.cache_manager.cache_reset();
         self.cache_manager.commit().map_err(Error::Cache)?;
+        if let Some(directory_cache) = &self.directory_cache
+            && let Err(err) = directory_cache.clear()
+        {
+            eprintln!("WARN: Failed to clear SSO directory cache: {err}");
+        }
         if let Some(mut upstream_lock) = self.upstream_lock {
             upstream_lock.load_lock().map_err(Error::LockProvider)?;
             upstream_lock.get_lock_mut().reset();
