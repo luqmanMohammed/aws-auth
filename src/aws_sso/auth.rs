@@ -511,6 +511,8 @@ where
         self.client_info.refresh_token = create_token.refresh_token;
         self.client_info.access_token_expires_at =
             Some(Timestamp::now() + SignedDuration::from_secs(create_token.expires_in.into()));
+        // A new device authorization may have signed in as another identity.
+        self.clear_directory_cache();
 
         if let Some(ref mut lock) = self.upstream_lock
             && !lock.get_lock().is_clear()
@@ -590,20 +592,26 @@ where
         ))
     }
 
-    pub fn logout(mut self) -> Result<(), C::Error, L::Error> {
-        self.cache_manager.load_cache().map_err(Error::Cache)?;
-        if let Some(access_token) = self.cache_manager.get_access_token() {
-            let _ = self.api.logout(input(
-                LogoutInput::builder().access_token(access_token).build(),
-            ));
-        }
-        self.cache_manager.cache_reset();
-        self.cache_manager.commit().map_err(Error::Cache)?;
+    fn clear_directory_cache(&self) {
         if let Some(directory_cache) = &self.directory_cache
             && let Err(err) = directory_cache.clear()
         {
             eprintln!("WARN: Failed to clear SSO directory cache: {err}");
         }
+    }
+
+    pub fn logout(mut self) -> Result<(), C::Error, L::Error> {
+        // A missing or corrupt cache has no token to revoke, and is reset below all the same.
+        if self.cache_manager.load_cache().is_ok()
+            && let Some(access_token) = self.cache_manager.get_access_token()
+        {
+            let _ = self.api.logout(input(
+                LogoutInput::builder().access_token(access_token).build(),
+            ));
+        }
+        self.clear_directory_cache();
+        self.cache_manager.cache_reset();
+        self.cache_manager.commit().map_err(Error::Cache)?;
         if let Some(mut upstream_lock) = self.upstream_lock {
             upstream_lock.load_lock().map_err(Error::LockProvider)?;
             upstream_lock.get_lock_mut().reset();

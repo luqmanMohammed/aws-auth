@@ -112,11 +112,15 @@ impl AwsApi for FakeAws {
 #[derive(Default)]
 struct MemCache {
     cache: Cache,
+    unreadable: bool,
 }
 
 impl ManageCache for MemCache {
     type Error = std::io::Error;
     fn load_cache(&mut self) -> std::result::Result<(), Self::Error> {
+        if self.unreadable {
+            return Err(std::io::Error::other("unreadable cache"));
+        }
         Ok(())
     }
     fn commit(&self) -> std::result::Result<(), Self::Error> {
@@ -739,4 +743,68 @@ fn refreshing_the_list_keeps_the_sign_in_and_replaces_the_directory() {
         ),
         ["2"]
     );
+}
+
+fn seeded_directory(dir: &TempDir) {
+    DirectoryCache::new(dir.path(), START_URL, SignedDuration::from_hours(1))
+        .record_accounts(&[AccountInfo::builder().account_id("1").build()], false);
+    assert!(dir.join("sso-directory.json").exists());
+}
+
+#[test]
+fn a_new_device_authorization_forgets_the_previous_sign_ins_directory() {
+    let dir = TempDir::new("auth-directory-new-sign-in");
+    seeded_directory(&dir);
+    let api = FakeAws::default();
+    api.register_client.borrow_mut().push_back(registered());
+    api.start_device_authorization
+        .borrow_mut()
+        .push_back(device_authorization(600));
+    api.create_token.borrow_mut().push_back(token("fresh"));
+    api.get_role_credentials
+        .borrow_mut()
+        .push_back(role_credentials());
+    let mut manager = with_directory(manager(MemCache::default(), api, None), &dir);
+
+    assume(&mut manager).expect("login should succeed");
+
+    assert!(
+        !dir.join("sso-directory.json").exists(),
+        "the new sign-in may be another identity"
+    );
+}
+
+#[test]
+fn a_refreshed_sign_in_keeps_the_directory() {
+    let dir = TempDir::new("auth-directory-refreshed-sign-in");
+    seeded_directory(&dir);
+    let api = FakeAws::default();
+    api.create_token.borrow_mut().push_back(token("refreshed"));
+    api.get_role_credentials
+        .borrow_mut()
+        .push_back(role_credentials());
+    let mut manager = with_directory(
+        manager(cached(None, Some("cached-refresh")), api, None),
+        &dir,
+    );
+
+    assume(&mut manager).expect("refresh should succeed");
+
+    assert!(dir.join("sso-directory.json").exists());
+}
+
+#[test]
+fn an_unreadable_cache_does_not_stop_logout_from_clearing_the_directory() {
+    let dir = TempDir::new("auth-logout-unreadable");
+    seeded_directory(&dir);
+    let cache = MemCache {
+        unreadable: true,
+        ..MemCache::default()
+    };
+
+    with_directory(manager(cache, FakeAws::default(), None), &dir)
+        .logout()
+        .expect("logout should succeed");
+
+    assert!(!dir.join("sso-directory.json").exists());
 }
