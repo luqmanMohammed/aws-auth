@@ -1,7 +1,7 @@
 pub mod elog;
 pub mod expiring;
 pub mod formatters;
-pub mod lock;
+pub mod lockout;
 pub mod private_fs;
 #[cfg(test)]
 pub mod test_support;

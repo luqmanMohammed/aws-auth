@@ -3,7 +3,7 @@ use super::cache::CacheRefMut;
 use super::directory::{DirectoryCache, ListingCache};
 use crate::aws_sso::cache::ManageCache;
 use crate::aws_sso::types::ClientInformation;
-use crate::utils::lock::CounterLockProvider;
+use crate::utils::lockout::Lockout;
 use aws_sdk_sso::operation::get_role_credentials::{
     GetRoleCredentialsError, GetRoleCredentialsInput,
 };
@@ -30,7 +30,7 @@ const CREATE_TOKEN_SLOW_DOWN_BACKOFF: Duration = Duration::from_secs(5);
 const EXPECT_MESSAGE: &str = "Should be present, caller pub function assume_role asures it";
 
 #[derive(Debug)]
-pub enum Error<CE: std::error::Error, LE: std::error::Error> {
+pub enum Error<CE: std::error::Error> {
     OidcRegisterClient(Box<SdkError<RegisterClientError, Response>>),
     OidcStartDeviceAuthorization(Box<SdkError<StartDeviceAuthorizationError, Response>>),
     OidcMissingVerificationUri,
@@ -40,11 +40,11 @@ pub enum Error<CE: std::error::Error, LE: std::error::Error> {
     OidcListAccounts(Box<SdkError<ListAccountsError, Response>>),
     OidcListAccountRoles(Box<SdkError<ListAccountRolesError, Response>>),
     Cache(CE),
-    LockProvider(LE),
+    Lockout(std::io::Error),
     UpstreamLocked,
 }
 
-impl<CE: std::error::Error, LE: std::error::Error> std::fmt::Display for Error<CE, LE> {
+impl<CE: std::error::Error> std::fmt::Display for Error<CE> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::OidcRegisterClient(err) => write!(f, "Oidc Register Client Error: {}", err),
@@ -71,7 +71,7 @@ impl<CE: std::error::Error, LE: std::error::Error> std::fmt::Display for Error<C
             Error::OidcListAccountRoles(err) => {
                 write!(f, "Oidc List Account Roles Error: {}", err)
             }
-            Error::LockProvider(err) => write!(f, "Lock Provider Error: {}", err),
+            Error::Lockout(err) => write!(f, "Lockout Error: {}", err),
             Error::UpstreamLocked => {
                 write!(
                     f,
@@ -82,9 +82,9 @@ impl<CE: std::error::Error, LE: std::error::Error> std::fmt::Display for Error<C
     }
 }
 
-impl<CE: std::error::Error, LE: std::error::Error> std::error::Error for Error<CE, LE> {}
+impl<CE: std::error::Error> std::error::Error for Error<CE> {}
 
-impl<CE: std::error::Error, LE: std::error::Error> Error<CE, LE> {
+impl<CE: std::error::Error> Error<CE> {
     /// The SSO portal API has no distinct error for a role the caller may not assume, so this is
     /// also what a forbidden role looks like; callers must not treat it as proof of a bad token.
     fn is_unauthorized(&self) -> bool {
@@ -106,7 +106,7 @@ impl<CE: std::error::Error, LE: std::error::Error> Error<CE, LE> {
     }
 }
 
-type Result<T, CE, LE> = std::result::Result<T, Error<CE, LE>>;
+type Result<T, CE> = std::result::Result<T, Error<CE>>;
 
 /// The floor stops a zero from either side turning polling into a request flood.
 fn poll_interval(retry_interval: Duration, device_interval: Duration) -> Duration {
@@ -119,7 +119,7 @@ fn input<T, E: std::fmt::Debug>(built: std::result::Result<T, E>) -> T {
     built.expect("SDK input builders check no fields, so building cannot fail")
 }
 
-pub struct AuthManager<'a, C, L, A>
+pub struct AuthManager<'a, C, A>
 where
     C: ManageCache,
 {
@@ -127,7 +127,7 @@ where
     cache_manager: CacheRefMut<'a, C>,
     start_url: String,
     retry_interval: Duration,
-    upstream_lock: Option<L>,
+    lockout: Option<Lockout>,
     directory_cache: Option<DirectoryCache>,
 
     client_info: ClientInformation,
@@ -137,10 +137,9 @@ where
     access_token_reacquired: bool,
 }
 
-impl<'a, C, L, A> AuthManager<'a, C, L, A>
+impl<'a, C, A> AuthManager<'a, C, A>
 where
     C: ManageCache,
-    L: CounterLockProvider,
     A: AwsApi,
 {
     /// TODO: Refactor into a input type
@@ -153,7 +152,7 @@ where
         code_writer: Option<Box<dyn std::io::Write>>,
         handle_cache: bool,
         no_browser: bool,
-        upstream_lock: Option<L>,
+        lockout: Option<Lockout>,
     ) -> Self {
         Self {
             api,
@@ -167,7 +166,7 @@ where
             },
             handle_cache,
             no_browser,
-            upstream_lock,
+            lockout,
             directory_cache: None,
             access_token_reacquired: false,
         }
@@ -178,7 +177,7 @@ where
         self
     }
 
-    fn ensure_access_token(&mut self) -> Result<(), C::Error, L::Error> {
+    fn ensure_access_token(&mut self) -> Result<(), C::Error> {
         if self.client_info.access_token.is_some() {
             return Ok(());
         }
@@ -202,15 +201,14 @@ where
         &mut self,
         resolver: F,
         ignore_cache: bool,
-    ) -> Result<T, C::Error, L::Error>
+    ) -> Result<T, C::Error>
     where
-        F: Fn(&mut Self) -> Result<T, C::Error, L::Error>,
+        F: Fn(&mut Self) -> Result<T, C::Error>,
     {
-        if let Some(ref mut ul) = self.upstream_lock {
-            ul.load_lock().map_err(Error::LockProvider)?;
-            if ul.get_lock().is_locked() {
-                return Err(Error::UpstreamLocked);
-            }
+        if let Some(lockout) = &mut self.lockout
+            && lockout.load().map_err(Error::Lockout)?.is_locked()
+        {
+            return Err(Error::UpstreamLocked);
         }
         if self.handle_cache {
             self.load_cache(ignore_cache);
@@ -273,7 +271,7 @@ where
     pub fn list_accounts(
         &mut self,
         listing_cache: ListingCache,
-    ) -> Result<Vec<AccountInfo>, C::Error, L::Error> {
+    ) -> Result<Vec<AccountInfo>, C::Error> {
         if listing_cache == ListingCache::Use
             && let Some(accounts) = self
                 .directory_cache
@@ -317,7 +315,7 @@ where
         &mut self,
         account_id: &str,
         listing_cache: ListingCache,
-    ) -> Result<Vec<RoleInfo>, C::Error, L::Error> {
+    ) -> Result<Vec<RoleInfo>, C::Error> {
         if listing_cache == ListingCache::Use
             && let Some(roles) = self
                 .directory_cache
@@ -362,7 +360,7 @@ where
         role_name: &str,
         refresh_sts_token: bool,
         ignore_cache: bool,
-    ) -> Result<Credentials, C::Error, L::Error> {
+    ) -> Result<Credentials, C::Error> {
         self.prepare_sso_and_resolve(
             |auth| {
                 let credentials = if refresh_sts_token {
@@ -395,7 +393,7 @@ where
         self.client_info.start_url = Some(self.start_url.clone());
     }
 
-    fn register_client(&mut self) -> Result<(), C::Error, L::Error> {
+    fn register_client(&mut self) -> Result<(), C::Error> {
         let register_client = self
             .api
             .register_client(input(
@@ -415,7 +413,7 @@ where
         Ok(())
     }
 
-    fn create_access_token(&mut self) -> Result<(), C::Error, L::Error> {
+    fn create_access_token(&mut self) -> Result<(), C::Error> {
         let device_auth = self
             .api
             .start_device_authorization(input(
@@ -495,9 +493,10 @@ where
                     if Instant::now() + interval >= deadline {
                         // Only a round that actually reached AWS is evidence of the repeated
                         // authorizations the lock exists to slow down.
-                        if reached_endpoint && let Some(ref mut lock) = self.upstream_lock {
-                            lock.get_lock_mut().increment(1);
-                            lock.save_lock().map_err(Error::LockProvider)?;
+                        if reached_endpoint && let Some(lockout) = &mut self.lockout {
+                            let mut loaded = lockout.load().map_err(Error::Lockout)?;
+                            loaded.increment();
+                            loaded.save().map_err(Error::Lockout)?;
                         }
                         break Err(err);
                     }
@@ -514,16 +513,15 @@ where
         // A new device authorization may have signed in as another identity.
         self.clear_directory_cache();
 
-        if let Some(ref mut lock) = self.upstream_lock
-            && !lock.get_lock().is_clear()
-        {
-            lock.get_lock_mut().reset();
-            lock.save_lock().map_err(Error::LockProvider)?;
+        if let Some(lockout) = &mut self.lockout {
+            let mut loaded = lockout.load().map_err(Error::Lockout)?;
+            loaded.reset();
+            loaded.save().map_err(Error::Lockout)?;
         }
         Ok(())
     }
 
-    fn refresh_access_token(&mut self) -> Result<(), C::Error, L::Error> {
+    fn refresh_access_token(&mut self) -> Result<(), C::Error> {
         let create_token = self
             .api
             .create_token(input(
@@ -556,7 +554,7 @@ where
         &self,
         role_name: &str,
         account_id: &str,
-    ) -> Result<Credentials, C::Error, L::Error> {
+    ) -> Result<Credentials, C::Error> {
         let credentials = self
             .api
             .get_role_credentials(input(
@@ -600,7 +598,7 @@ where
         }
     }
 
-    pub fn logout(mut self) -> Result<(), C::Error, L::Error> {
+    pub fn logout(mut self) -> Result<(), C::Error> {
         // A missing or corrupt cache has no token to revoke, and is reset below all the same.
         if self.cache_manager.load_cache().is_ok()
             && let Some(access_token) = self.cache_manager.get_access_token()
@@ -612,10 +610,10 @@ where
         self.clear_directory_cache();
         self.cache_manager.cache_reset();
         self.cache_manager.commit().map_err(Error::Cache)?;
-        if let Some(mut upstream_lock) = self.upstream_lock {
-            upstream_lock.load_lock().map_err(Error::LockProvider)?;
-            upstream_lock.get_lock_mut().reset();
-            upstream_lock.save_lock().map_err(Error::LockProvider)?;
+        if let Some(lockout) = &mut self.lockout {
+            let mut loaded = lockout.load().map_err(Error::Lockout)?;
+            loaded.reset();
+            loaded.save().map_err(Error::Lockout)?;
         }
         Ok(())
     }
