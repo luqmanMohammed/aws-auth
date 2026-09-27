@@ -47,6 +47,16 @@ pub struct UnverifiedSsoConfig {
     pub account_cache_ttl: Option<SignedDuration>,
     #[serde(rename = "noBrowser", skip_serializing_if = "Option::is_none")]
     pub no_browser: Option<bool>,
+    #[serde(rename = "cacheBackend", skip_serializing_if = "Option::is_none")]
+    pub cache_backend: Option<CacheBackend>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CacheBackend {
+    #[default]
+    File,
+    Keyring,
 }
 
 impl UnverifiedSsoConfig {
@@ -59,6 +69,7 @@ impl UnverifiedSsoConfig {
             create_token_lock_decay: None,
             account_cache_ttl: None,
             no_browser: None,
+            cache_backend: None,
         }
     }
 
@@ -173,6 +184,10 @@ impl AwsSsoConfig {
 
     pub fn no_browser(&self) -> bool {
         self.0.no_browser.unwrap_or(false)
+    }
+
+    pub fn cache_backend(&self) -> CacheBackend {
+        self.0.cache_backend.unwrap_or_default()
     }
 }
 
@@ -318,6 +333,35 @@ mod tests {
             config(None).verify().unwrap().account_cache_ttl(),
             Some(DEFAULT_ACCOUNT_CACHE_TTL)
         );
+    }
+
+    #[test]
+    fn an_absent_cache_backend_falls_back_to_the_file() {
+        assert_eq!(
+            config(None).verify().unwrap().cache_backend(),
+            CacheBackend::File
+        );
+    }
+
+    #[test]
+    fn a_keyring_cache_backend_round_trips_in_lowercase() {
+        let mut config = config(None);
+        config.cache_backend = Some(CacheBackend::Keyring);
+        let json = serde_json::to_value(&config).expect("config should serialize");
+
+        assert_eq!(json["cacheBackend"], "keyring");
+        let parsed: UnverifiedSsoConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            parsed.verify().unwrap().cache_backend(),
+            CacheBackend::Keyring
+        );
+    }
+
+    #[test]
+    fn an_unknown_cache_backend_is_rejected() {
+        let json = r#"{"startURL": "https://a.awsapps.com/start", "ssoRegion": "eu-west-2", "cacheBackend": "vault"}"#;
+
+        assert!(UnverifiedSsoConfig::from_slice(json.as_bytes()).is_err());
     }
 
     #[test]

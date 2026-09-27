@@ -1,9 +1,14 @@
+use crate::aws_sso::config::{AwsSsoConfig, CacheBackend};
 use crate::aws_sso::types::{ClientInformation, CredentialsWrapper};
 
 use aws_sdk_ssooidc::config::Credentials;
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
+
+pub mod mono_json;
+pub mod sealed_json;
 
 const EXPIRATION_BUFFER: SignedDuration = SignedDuration::from_mins(5);
 
@@ -65,6 +70,8 @@ impl<'a, C: ManageCache> From<&'a mut C> for CacheRefMut<'a, C> {
 pub trait ManageCache {
     type Error: std::error::Error;
 
+    /// A missing or corrupt cache loads as if there were none. An error means the store itself
+    /// cannot be used, so nothing obtained by signing in now could be kept.
     fn load_cache(&mut self) -> Result<(), Self::Error>;
     fn commit(&self) -> Result<(), Self::Error>;
     fn get_cache_as_ref(&self) -> &Cache;
@@ -196,56 +203,58 @@ pub trait ManageCache {
     }
 }
 
-pub mod mono_json {
-    use crate::aws_sso::cache::Cache;
-    use crate::aws_sso::cache::ManageCache;
-    use crate::utils::private_fs;
-    use std::fs::File;
-    use std::path::{Path, PathBuf};
+pub enum CacheStore {
+    File(mono_json::MonoJsonCacheManager),
+    Keyring(sealed_json::SealedJsonCacheManager),
+}
 
-    #[derive(Debug, thiserror::Error)]
-    pub enum Error {
-        #[error("Error parsing cache json: {0}")]
-        SerdeJson(#[from] serde_json::Error),
-        #[error("Cache not found: {0}")]
-        CacheNotFound(#[from] std::io::Error),
-    }
-    pub struct MonoJsonCacheManager {
-        cache: Cache,
-        cache_path: PathBuf,
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    File(#[from] mono_json::Error),
+    #[error(transparent)]
+    Keyring(#[from] sealed_json::Error),
+}
 
-    impl MonoJsonCacheManager {
-        pub fn new(cache_dir: &Path) -> Self {
-            Self {
-                cache: Cache::default(),
-                cache_path: cache_dir.join("cache.json"),
+impl CacheStore {
+    pub fn from_config(config: &AwsSsoConfig, cache_dir: &Path) -> Self {
+        match config.cache_backend() {
+            CacheBackend::File => Self::File(mono_json::MonoJsonCacheManager::new(cache_dir)),
+            CacheBackend::Keyring => {
+                Self::Keyring(sealed_json::SealedJsonCacheManager::new(cache_dir))
             }
         }
     }
+}
 
-    impl ManageCache for MonoJsonCacheManager {
-        type Error = Error;
+impl ManageCache for CacheStore {
+    type Error = Error;
 
-        fn load_cache(&mut self) -> Result<(), Self::Error> {
-            let cache_file = File::open(&self.cache_path)?;
-            let cache = serde_json::from_reader::<File, Cache>(cache_file)?;
-            self.cache = cache;
-            Ok(())
+    fn load_cache(&mut self) -> Result<(), Self::Error> {
+        match self {
+            CacheStore::File(c) => Ok(c.load_cache()?),
+            CacheStore::Keyring(c) => Ok(c.load_cache()?),
         }
+    }
 
-        fn commit(&self) -> Result<(), Self::Error> {
-            let cache = serde_json::to_vec(&self.cache)?;
-            private_fs::write_atomic(&self.cache_path, &cache)?;
-            Ok(())
+    fn commit(&self) -> Result<(), Self::Error> {
+        match self {
+            CacheStore::File(c) => Ok(c.commit()?),
+            CacheStore::Keyring(c) => Ok(c.commit()?),
         }
+    }
 
-        fn get_cache_as_ref(&self) -> &Cache {
-            &self.cache
+    fn get_cache_as_ref(&self) -> &Cache {
+        match self {
+            CacheStore::File(c) => c.get_cache_as_ref(),
+            CacheStore::Keyring(c) => c.get_cache_as_ref(),
         }
+    }
 
-        fn get_cache_as_mut(&mut self) -> &mut Cache {
-            &mut self.cache
+    fn get_cache_as_mut(&mut self) -> &mut Cache {
+        match self {
+            CacheStore::File(c) => c.get_cache_as_mut(),
+            CacheStore::Keyring(c) => c.get_cache_as_mut(),
         }
     }
 }
@@ -442,5 +451,29 @@ mod tests {
 
         assert!(cache.get_access_token().is_none());
         assert!(cache.get_client_credentials().is_none());
+    }
+
+    #[test]
+    fn a_file_store_round_trips_through_its_directory() {
+        let dir = crate::utils::test_support::TempDir::new("cache-store-file");
+        let mut config = crate::aws_sso::config::UnverifiedSsoConfig::new(
+            "https://example.awsapps.com/start".to_string(),
+            "eu-west-2".to_string(),
+        );
+        config.cache_backend = Some(CacheBackend::File);
+        let config = config.verify().unwrap();
+        let mut written = CacheStore::from_config(&config, dir.path());
+        written.set_access_token("access-token".to_string(), 3600);
+
+        written.commit().expect("commit should succeed");
+        let mut read = CacheStore::from_config(&config, dir.path());
+        read.load_cache().expect("load should succeed");
+
+        assert!(matches!(read, CacheStore::File(_)));
+        assert!(dir.join("cache.json").exists());
+        assert_eq!(
+            read.get_cache_as_ref().client_info.access_token.as_deref(),
+            Some("access-token")
+        );
     }
 }

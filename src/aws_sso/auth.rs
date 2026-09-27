@@ -211,7 +211,7 @@ where
             return Err(Error::UpstreamLocked);
         }
         if self.handle_cache {
-            self.load_cache(ignore_cache);
+            self.load_cache(ignore_cache)?;
         }
         // Re-registered before any device authorization so a client stored by an older build,
         // which was registered without a scope and so can never be issued a refresh token, is
@@ -380,17 +380,16 @@ where
         )
     }
 
-    pub fn load_cache(&mut self, ignore_cache: bool) {
-        if self.cache_manager.load_cache().is_err()
-            || !self.cache_manager.is_valid(&self.start_url)
-            || ignore_cache
-        {
+    pub fn load_cache(&mut self, ignore_cache: bool) -> Result<(), C::Error> {
+        self.cache_manager.load_cache().map_err(Error::Cache)?;
+        if !self.cache_manager.is_valid(&self.start_url) || ignore_cache {
             self.client_info.client_id = None;
             self.client_info.client_secret = None;
         } else {
             self.client_info = self.cache_manager.get_computed_client_info();
         }
         self.client_info.start_url = Some(self.start_url.clone());
+        Ok(())
     }
 
     fn register_client(&mut self) -> Result<(), C::Error> {
@@ -599,7 +598,7 @@ where
     }
 
     pub fn logout(mut self) -> Result<(), C::Error> {
-        // A missing or corrupt cache has no token to revoke, and is reset below all the same.
+        // An unusable store has no token to revoke; the reset below reports it if it still is.
         if self.cache_manager.load_cache().is_ok()
             && let Some(access_token) = self.cache_manager.get_access_token()
         {

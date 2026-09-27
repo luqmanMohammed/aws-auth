@@ -12,7 +12,7 @@ use crate::{
     alias_providers::{self, AliasProviderError, ProvideAliases},
     aws_sso::{
         AwsSsoManagerError, CacheManager, CacheManagerError, ConfigError, ListingCache,
-        build_sso_mgr_manual, cache::ManageCache,
+        build_sso_mgr_manual, cache::ManageCache, load_config,
     },
     cmd::Batch,
     elog,
@@ -72,10 +72,11 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
     let batch_common = subcommand.get_common_args();
     let config_dir = resolve_config_dir(batch_common.config_dir.as_deref())?;
     let cache_dir = batch_common.sso_cache_dir.as_deref().unwrap_or(&config_dir);
-    let mut cache_manager = CacheManager::new(cache_dir);
+    let config = load_config(&config_dir)?;
+    let mut cache_manager = CacheManager::from_config(&config, cache_dir);
     let mut alias_provider = alias_providers::build_alias_provider(&config_dir);
-    let mut sso_manager = build_sso_mgr_manual(&mut cache_manager, &config_dir, cache_dir)?;
-    sso_manager.load_cache(batch_common.ignore_cache);
+    let mut sso_manager = build_sso_mgr_manual(&mut cache_manager, &config, &config_dir, cache_dir);
+    sso_manager.load_cache(batch_common.ignore_cache)?;
     let listing_cache =
         ListingCache::from_flags(batch_common.ignore_cache, batch_common.refresh_list);
 

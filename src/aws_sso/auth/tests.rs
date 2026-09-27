@@ -796,6 +796,20 @@ fn a_refreshed_sign_in_keeps_the_directory() {
 }
 
 #[test]
+fn an_unreadable_cache_fails_before_any_sign_in() {
+    let cache = MemCache {
+        unreadable: true,
+        ..MemCache::default()
+    };
+    let mut manager = manager(cache, FakeAws::default(), None);
+
+    let err = assume(&mut manager).expect_err("a sign-in that cannot be kept should not start");
+
+    assert!(matches!(err, Error::Cache(_)), "got {err:?}");
+    assert!(manager.api.calls().is_empty());
+}
+
+#[test]
 fn an_unreadable_cache_does_not_stop_logout_from_clearing_the_directory() {
     let dir = TempDir::new("auth-logout-unreadable");
     seeded_directory(&dir);

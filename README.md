@@ -168,7 +168,8 @@ an unrecognised name is an error rather than being ignored.
   "createTokenRetryThreshold": 5,
   "createTokenLockDecay": "PT2H",
   "accountCacheTtl": "PT24H",
-  "noBrowser": false
+  "noBrowser": false,
+  "cacheBackend": "file"
 }
 ```
 
@@ -186,8 +187,23 @@ aws-auth init --update --retry-interval 10s --create-token-lock-decay 3h --no-br
 ```
 
 Alongside it live `aliases.json` (your aliases), `cache.json` (the SSO session and
-cached role credentials), `sso-directory.json` (listed accounts and roles, cleared by
-`aws-auth logout`), `aws-sso-create-token-lock.json`, and `eks/`.
+cached role credentials, or `cache.sealed` with the keyring backend),
+`sso-directory.json` (listed accounts and roles, cleared by `aws-auth logout`),
+`aws-sso-create-token-lock.json`, and `eks/`.
+
+## Keyring-protected cache
+
+Set `"cacheBackend": "keyring"` to encrypt the SSO cache with a key held in the OS
+keyring — Keychain on macOS, Credential Manager on Windows, Secret Service on Linux. The
+cache is then written to `cache.sealed` and is unreadable without that key, so a copied
+or backed-up config directory leaks nothing. On macOS only the aws-auth binary that created
+the key can read it silently; a rebuilt or upgraded binary asks once. On Windows and Linux
+any process running as you can read it.
+
+If the keyring cannot be reached — over SSH on macOS, or on Linux without a desktop
+session — commands fail before signing in; use `"file"` on such machines. Switching
+backends means one fresh sign-in, and a `cache.json` left from the file backend can be
+deleted.
 
 ## Headless hosts
 
@@ -218,7 +234,8 @@ to `0` to make locks permanent until unlocked by hand.
 - **Exit codes.** `0` on success, `1` on failure, `2` for a command line error, and the
   child's own status for `exec`.
 - **File permissions.** On Unix the config directory and `eks/` are created `0700`, and
-  `cache.json` and cached EKS tokens are written `0600` — they hold live credentials.
+  `cache.json`, `cache.sealed` and cached EKS tokens are written `0600` — they hold live
+  credentials.
   Windows has no equivalent handling and inherits the directory's ACL.
 - **Cache writes are atomic**, so a concurrent reader never sees a half-written file.
 
