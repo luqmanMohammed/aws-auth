@@ -103,8 +103,8 @@ impl CacheManager {
             if !untouched {
                 continue;
             }
-            // Still checked, because the longest token a caller can ask for lasts exactly as long
-            // as the window above.
+            // Still checked rather than inferred from the age, so this never depends on the
+            // longest expiry the command line allows.
             let expired = fs::read_to_string(&path)
                 .ok()
                 .and_then(|content| serde_json::from_str::<K8sExecCredential>(&content).ok())
