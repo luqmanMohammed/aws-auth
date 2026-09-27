@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- add a keyring cache backend that seals the SSO cache with a key held in the OS keyring
 - cache listed SSO accounts and roles with an accountCacheTtl config and a --refresh-list flag
 - accept human-friendly durations such as 3h or 30m on the CLI duration flags
 
