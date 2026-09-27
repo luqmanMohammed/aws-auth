@@ -16,6 +16,7 @@ pub struct ExecInitInputs {
     pub retry_interval: Option<jiff::SignedDuration>,
     pub create_token_retry_threshold: Option<u64>,
     pub create_token_lock_decay: Option<jiff::SignedDuration>,
+    pub account_cache_ttl: Option<jiff::SignedDuration>,
     pub no_browser: Option<bool>,
 }
 
@@ -77,6 +78,10 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         &mut sso_config.create_token_lock_decay,
         exec_inputs.create_token_lock_decay,
     );
+    override_opt(
+        &mut sso_config.account_cache_ttl,
+        exec_inputs.account_cache_ttl,
+    );
     override_opt(&mut sso_config.no_browser, exec_inputs.no_browser);
 
     let sso_config = sso_config
@@ -129,6 +134,7 @@ mod tests {
             retry_interval: None,
             create_token_retry_threshold: None,
             create_token_lock_decay: None,
+            account_cache_ttl: None,
             no_browser: None,
         }
     }

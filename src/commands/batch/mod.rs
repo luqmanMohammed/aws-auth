@@ -11,8 +11,8 @@ use std::sync::Arc;
 use crate::{
     alias_providers::{self, AliasProviderError, ProvideAliases},
     aws_sso::{
-        AwsSsoManagerError, CacheManager, CacheManagerError, ConfigError, build_sso_mgr_manual,
-        cache::ManageCache,
+        AwsSsoManagerError, CacheManager, CacheManagerError, ConfigError, ListingCache,
+        build_sso_mgr_manual, cache::ManageCache,
     },
     cmd::Batch,
     elog,
@@ -74,8 +74,10 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
     let cache_dir = batch_common.sso_cache_dir.as_deref().unwrap_or(&config_dir);
     let mut cache_manager = CacheManager::new(cache_dir);
     let mut alias_provider = alias_providers::build_alias_provider(&config_dir);
-    let mut sso_manager = build_sso_mgr_manual(&mut cache_manager, &config_dir)?;
+    let mut sso_manager = build_sso_mgr_manual(&mut cache_manager, &config_dir, cache_dir)?;
     sso_manager.load_cache(batch_common.ignore_cache);
+    let listing_cache =
+        ListingCache::from_flags(batch_common.ignore_cache, batch_common.refresh_list);
 
     let grouped_possible_assumes: Vec<(String, String)> = if let Some(ref aliases) =
         batch_common.aliases
@@ -121,7 +123,7 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
             let regex = Regex::new(&format!("^{}", account_name_regex))?;
 
             sso_manager
-                .list_accounts(batch_common.ignore_cache)?
+                .list_accounts(listing_cache)?
                 .into_iter()
                 .filter(|ai| {
                     ai.account_name.as_ref().is_some()
@@ -137,7 +139,7 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                 .collect::<Vec<_>>()
         } else {
             sso_manager
-                .list_accounts(batch_common.ignore_cache)?
+                .list_accounts(listing_cache)?
                 .into_iter()
                 .filter(|ai| ai.account_id().is_some())
                 .flat_map(|ai| {

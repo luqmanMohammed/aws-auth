@@ -2,6 +2,7 @@ mod api;
 mod auth;
 pub mod cache;
 pub mod config;
+mod directory;
 mod types;
 
 use std::path::Path;
@@ -12,6 +13,8 @@ use auth::AuthManager;
 use aws_config::Region;
 use cache::{CacheRefMut, mono_json::MonoJsonCacheManager};
 use config::UnverifiedSsoConfig;
+use directory::DirectoryCache;
+pub use directory::ListingCache;
 
 pub type CacheManager = MonoJsonCacheManager;
 pub type CacheManagerError = cache::mono_json::Error;
@@ -26,6 +29,7 @@ pub const CREATE_TOKEN_LOCK_NAME: &str = "aws-sso-create-token-lock";
 fn build_aws_sso_manager<'a>(
     cache_manager: impl Into<CacheRefMut<'a, CacheManager>>,
     config_dir: &Path,
+    cache_dir: &Path,
     handle_cache: bool,
 ) -> Result<AwsSsoManager<'a>, ConfigError> {
     let config =
@@ -41,7 +45,7 @@ fn build_aws_sso_manager<'a>(
         )
     });
 
-    Ok(AwsSsoManager::new(
+    let manager = AwsSsoManager::new(
         LazySdkAdapter::new(Region::new(config.sso_region().to_string())),
         cache_manager,
         config.start_url(),
@@ -50,20 +54,32 @@ fn build_aws_sso_manager<'a>(
         handle_cache,
         config.no_browser(),
         lock_provider,
-    ))
+    );
+    Ok(match config.account_cache_ttl() {
+        Some(ttl) => {
+            manager.with_directory_cache(DirectoryCache::new(cache_dir, config.start_url(), ttl))
+        }
+        None => manager,
+    })
 }
 
 pub fn build_sso_mgr_cached<'a>(
     config_dir: &Path,
     cache_dir: Option<&Path>,
 ) -> Result<AwsSsoManager<'a>, ConfigError> {
-    let cache_manager = MonoJsonCacheManager::new(cache_dir.unwrap_or(config_dir));
-    build_aws_sso_manager(cache_manager, config_dir, true)
+    let cache_dir = cache_dir.unwrap_or(config_dir);
+    build_aws_sso_manager(
+        MonoJsonCacheManager::new(cache_dir),
+        config_dir,
+        cache_dir,
+        true,
+    )
 }
 
 pub fn build_sso_mgr_manual<'a>(
     cache_manager: &'a mut CacheManager,
     config_dir: &Path,
+    cache_dir: &Path,
 ) -> Result<AwsSsoManager<'a>, ConfigError> {
-    build_aws_sso_manager(cache_manager, config_dir, false)
+    build_aws_sso_manager(cache_manager, config_dir, cache_dir, false)
 }

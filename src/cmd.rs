@@ -225,6 +225,13 @@ pub enum Commands {
         #[arg(long, alias = "create-token-lock-decay-seconds", value_parser = parse_duration)]
         create_token_lock_decay: Option<SignedDuration>,
 
+        /// How long listed SSO accounts and roles are cached, such as 30m, 3h or 1d
+        /// Use --ignore-cache on a listing command to refresh early; logout clears the cache.
+        /// Plain numbers are seconds. Set to 0 to disable caching.
+        /// Default: 24h
+        #[arg(long, value_parser = parse_duration)]
+        account_cache_ttl: Option<SignedDuration>,
+
         /// Never try to open a browser during device authorization
         /// Prints the verification URL instead, for hosts with no browser of their own
         /// Pass --no-browser false to turn it back off; omitting it leaves the stored value alone
@@ -454,6 +461,13 @@ pub struct SsoCommonArgs {
     /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
+
+    /// Refetch the listed accounts and roles instead of using the cached copy
+    /// Keeps the current SSO sign-in; --ignore-cache refetches them too but also
+    /// starts a new device authorization
+    /// Default: false (use the cached accounts and roles while they are fresh)
+    #[arg(long, default_value_t = false)]
+    pub refresh_list: bool,
 }
 
 /// Subcommands for AWS SSO management
@@ -535,6 +549,13 @@ pub struct BatchCommonArgs {
     /// Default: false (use cached credentials when available)
     #[arg(short = ARG_SHORT_IGNORE_CACHE, long, default_value_t = false)]
     pub ignore_cache: bool,
+
+    /// Refetch the listed accounts and roles instead of using the cached copy
+    /// Keeps the current SSO sign-in; --ignore-cache refetches them too but also
+    /// starts a new device authorization
+    /// Default: false (use the cached accounts and roles while they are fresh)
+    #[arg(long, default_value_t = false)]
+    pub refresh_list: bool,
 
     /// Show status and progress messages
     /// Default: false (Do not show operational logs)
