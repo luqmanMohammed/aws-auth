@@ -226,7 +226,7 @@ pub enum Commands {
         create_token_lock_decay: Option<SignedDuration>,
 
         /// How long listed SSO accounts and roles are cached, such as 30m, 3h or 1d
-        /// Use --ignore-cache on a listing command to refresh early; logout clears the cache.
+        /// Use --refresh-list on a listing command to refresh early; logout clears the cache.
         /// Plain numbers are seconds. Set to 0 to disable caching.
         /// Default: 24h
         #[arg(long, value_parser = parse_duration)]
