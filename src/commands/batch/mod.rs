@@ -1,10 +1,13 @@
 mod exec;
+mod output;
 
 use std::collections::{HashMap, HashSet};
+use std::io::{self, Write};
 
 use crate::utils::worker::{JobError, ThreadPool};
 use aws_sdk_ssooidc::config::Credentials;
 use exec::ExecJob;
+use output::{AccountEnd, BatchOutput, Status};
 use regex::Regex;
 use std::sync::Arc;
 
@@ -41,6 +44,10 @@ pub enum Error {
     NoCredentialsResolved(usize),
     #[error("{failed} of {total} accounts failed")]
     JobsFailed { failed: usize, total: usize },
+    #[error("Could not prepare the output directory: {0}")]
+    OutputDir(std::io::Error),
+    #[error("Could not record results: {0}")]
+    Results(std::io::Error),
 }
 
 impl From<AwsSsoManagerError> for Error {
@@ -62,12 +69,18 @@ fn run_failed(failed: usize, total: usize, allow_partial: bool) -> bool {
 }
 
 pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
-    match &subcommand {
-        Batch::Exec { arguments, .. } => {
+    let output = match &subcommand {
+        Batch::Exec {
+            arguments,
+            output_mode,
+            output_dir,
+            ..
+        } => {
             exec::ExecJob::validate(arguments)
                 .map_err(|err| Error::ValidationFailed(err.to_string()))?;
+            Arc::new(BatchOutput::new(output_mode, output_dir.clone()).map_err(Error::OutputDir)?)
         }
-    }
+    };
 
     let batch_common = subcommand.get_common_args();
     let config_dir = resolve_config_dir(batch_common.config_dir.as_deref())?;
@@ -96,7 +109,8 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
             }
         }
         if !unknown.is_empty() {
-            eprintln!(
+            let _ = writeln!(
+                io::stderr(),
                 "WARN: {} of {} aliases did not resolve to an account and were skipped: {}",
                 unknown.len(),
                 aliases.len(),
@@ -157,7 +171,7 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
         return Err(Error::NoAccountsTargeted);
     }
 
-    let mut credentials_map: HashMap<String, Credentials> = HashMap::new();
+    let mut credentials_map: HashMap<String, (String, Credentials)> = HashMap::new();
     for (account_id, role_name) in &grouped_possible_assumes {
         if credentials_map.contains_key(account_id) {
             continue;
@@ -168,7 +182,7 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                     batch_common.debug,
                     "Succesffuly resolved credentials for account {account_id} using the {role_name} role"
                 );
-                credentials_map.insert(account_id.clone(), credentials);
+                credentials_map.insert(account_id.clone(), (role_name.clone(), credentials));
             }
             Err(err) => {
                 if let AwsSsoManagerError::SsoGetRoleCredentials(_) = err {
@@ -194,12 +208,23 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
     }
     let targeted = credentials_map.len() + skipped.len();
     if !skipped.is_empty() {
-        eprintln!(
+        let _ = writeln!(
+            io::stderr(),
             "WARN: Could not resolve credentials for {} of {} accounts: {}",
             skipped.len(),
             targeted,
             skipped.join(", ")
         );
+    }
+    for account_id in &skipped {
+        output
+            .record(
+                account_id,
+                None,
+                &AccountEnd::not_run(Status::Unresolved),
+                None,
+            )
+            .map_err(Error::Results)?;
     }
     if credentials_map.is_empty() {
         return Err(Error::NoCredentialsResolved(targeted));
@@ -210,11 +235,10 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
     match subcommand {
         Batch::Exec {
             arguments,
-            suppress_output,
-            output_dir,
             fail_fast,
             allow_partial,
             batch_common,
+            ..
         } => {
             let arguments: Arc<[String]> = Arc::from(arguments.into_boxed_slice());
             let _ = &arguments
@@ -222,16 +246,19 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
                 .ok_or(Error::MissingRequiredArg("Missing program".to_string()))?;
             let worker_pool: ThreadPool<ExecJob> =
                 ThreadPool::new(batch_common.parallel, batch_common.debug, fail_fast);
-            let output_dir = output_dir.map(Arc::new);
             let region = Arc::new(batch_common.region);
-            for (account_id, credentials) in credentials_map {
+            let roles: HashMap<String, String> = credentials_map
+                .iter()
+                .map(|(account_id, (role, _))| (account_id.clone(), role.clone()))
+                .collect();
+            for (account_id, (role, credentials)) in credentials_map {
                 worker_pool.execute(ExecJob {
                     account_id,
+                    role,
                     arguments: arguments.clone(),
-                    output_base_path: output_dir.clone(),
                     credentials,
-                    suppress_output,
                     region: region.clone(),
+                    output: output.clone(),
                 });
             }
 
@@ -242,17 +269,32 @@ pub fn exec_batch(subcommand: Batch) -> Result<(), Error> {
             let mut failed = 0;
             let mut skipped = 0;
             for job in &results {
-                match &job.result {
-                    Ok(_) => {}
-                    Err(JobError::Skipped) => skipped += 1,
+                let role = roles.get(&job.job_id).map(String::as_str);
+                // A job that ran recorded itself; these never got that far.
+                let unrecorded = match &job.result {
+                    Ok(_) => None,
+                    Err(JobError::Skipped) => {
+                        skipped += 1;
+                        Some(AccountEnd::not_run(Status::Skipped))
+                    }
                     Err(err) => {
                         failed += 1;
-                        eprintln!("WARN: account {} failed: {err}", job.job_id);
+                        let _ =
+                            writeln!(io::stderr(), "WARN: account {} failed: {err}", job.job_id);
+                        matches!(err, JobError::Panicked(_)).then(|| AccountEnd::failed(err))
                     }
+                };
+                if let Some(end) = unrecorded {
+                    output
+                        .record(&job.job_id, role, &end, None)
+                        .map_err(Error::Results)?;
                 }
             }
             if skipped > 0 {
-                eprintln!("WARN: {skipped} of {total} accounts were skipped after --fail-fast");
+                let _ = writeln!(
+                    io::stderr(),
+                    "WARN: {skipped} of {total} accounts were skipped after --fail-fast"
+                );
             }
 
             if run_failed(failed, total, allow_partial) {

@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use jiff::SignedDuration;
 use std::path::PathBuf;
 
@@ -41,8 +41,8 @@ const ARG_SHORT_PARALLEL: char = 'p';
 const ARG_SHORT_ALLOW_PARTIAL: char = 'P';
 const ARG_SHORT_DEBUG: char = 'd';
 const ARG_SHORT_OUTPUT_DIR: char = 'D';
-const ARG_SHORT_SUPPRESS_OUTPUT: char = 's';
 const ARG_SHORT_OVERWRITE: char = 'w';
+const ARG_SHORT_OUTPUT_MODE: char = 'm';
 
 /// Defines output format options for command results
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -502,6 +502,21 @@ pub enum Sso {
     },
 }
 
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum OutputMode {
+    /// Group like GNU parallel output is grouped by account, with a header for each account and its output below it (Header written to stderr).
+    Group,
+    /// Tag like GNU parallel output is prefixed with a tag for each account, so the output can be interleaved.
+    Tag,
+    /// Json output is one JSON object per line, one per account once it finishes, with the account ID, its role and result, and the command output.
+    Json,
+    /// Raw output is written as-is to parent stdout and stderr, with no additional formatting or tagging.
+    /// The command inherits the terminal, so this cannot be combined with --output-dir.
+    Raw,
+    /// None output discards all output from the command, useful for commands that don't produce output or when only the exit code matters.
+    None,
+}
+
 #[derive(Args)]
 pub struct BatchCommonArgs {
     /// AWS Account IDs to target (comma-separated list)
@@ -574,13 +589,17 @@ pub enum Batch {
         #[clap(flatten)]
         batch_common: BatchCommonArgs,
 
-        /// Hide command output during execution
-        /// Default: false (display command output)
-        #[arg(short = ARG_SHORT_SUPPRESS_OUTPUT, long, default_value_t = false)]
-        suppress_output: bool,
+        /// How per-account command output is written
+        /// Options: group, tag, json, raw, none
+        /// Default: group
+        #[arg(short = ARG_SHORT_OUTPUT_MODE, long, value_enum, default_value_t = OutputMode::Group)]
+        output_mode: OutputMode,
 
-        /// Directory to save per-account output files
-        /// No effect if suppress_output is enabled
+        /// Directory to save per-account output files, created if missing
+        /// Written in addition to, and independently of, --output-mode
+        /// Also holds results.jsonl with each account's status and run details
+        /// Use with --output-mode none to write output only to this directory
+        /// Cannot be combined with --output-mode raw
         #[arg(short = ARG_SHORT_OUTPUT_DIR, long)]
         output_dir: Option<PathBuf>,
 
@@ -615,6 +634,34 @@ impl Batch {
         match self {
             Batch::Exec { batch_common, .. } => batch_common,
         }
+    }
+}
+
+impl Cli {
+    /// Clap can only declare a conflict with an argument, not with one of its values, so the
+    /// value conflicts are checked here after parsing.
+    pub fn validate(self) -> Result<Self, clap::Error> {
+        if let Commands::Batch {
+            subcommand:
+                Batch::Exec {
+                    output_mode: OutputMode::Raw,
+                    output_dir: Some(_),
+                    ..
+                },
+        } = &self.command
+        {
+            let mut command = Self::command();
+            command.build();
+            let exec = command
+                .find_subcommand_mut("batch")
+                .and_then(|batch| batch.find_subcommand_mut("exec"))
+                .expect("batch exec is a defined subcommand");
+            return Err(exec.error(
+                clap::error::ErrorKind::ArgumentConflict,
+                "the argument '--output-mode raw' cannot be used with '--output-dir <OUTPUT_DIR>'",
+            ));
+        }
+        Ok(self)
     }
 }
 
@@ -696,6 +743,24 @@ mod tests {
         };
         assert_eq!(retry_interval, Some(SignedDuration::from_secs(10)));
         assert_eq!(create_token_lock_decay, Some(SignedDuration::from_mins(30)));
+    }
+
+    #[test]
+    fn raw_output_cannot_be_combined_with_an_output_dir() {
+        let parse = |args: &[&str]| {
+            let base = ["aws-auth", "batch", "exec", "-r", "admin"];
+            Cli::try_parse_from(base.iter().chain(args).chain(&["--", "true"]))
+                .and_then(Cli::validate)
+        };
+
+        let err = parse(&["-m", "raw", "-D", "out"])
+            .err()
+            .expect("raw with an output dir should be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+
+        assert!(parse(&["-m", "raw"]).is_ok());
+        assert!(parse(&["-m", "none", "-D", "out"]).is_ok());
+        assert!(parse(&["-D", "out"]).is_ok(), "the default mode is group");
     }
 
     #[test]

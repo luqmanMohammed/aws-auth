@@ -37,7 +37,7 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), String> {
-    let cli = Cli::parse();
+    let cli = Cli::parse().validate().unwrap_or_else(|err| err.exit());
     match cli.command {
         Commands::Init {
             sso_start_url,
