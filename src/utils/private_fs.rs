@@ -7,16 +7,17 @@ const FILE_MODE: u32 = 0o600;
 #[cfg(unix)]
 const DIR_MODE: u32 = 0o700;
 
+#[cfg(unix)]
 fn owner_only() -> fs::OpenOptions {
+    use std::os::unix::fs::OpenOptionsExt;
     let mut options = File::options();
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(FILE_MODE);
-    }
-
+    options.mode(FILE_MODE);
     options
+}
+
+#[cfg(not(unix))]
+fn owner_only() -> fs::OpenOptions {
+    File::options()
 }
 
 fn create_file(path: &Path) -> io::Result<File> {
