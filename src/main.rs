@@ -50,6 +50,7 @@ fn run() -> Result<(), String> {
             account_cache_ttl,
             update,
             no_browser,
+            cache_backend,
         } => {
             init::exec_init(ExecInitInputs {
                 config_dir,
@@ -62,6 +63,7 @@ fn run() -> Result<(), String> {
                 create_token_retry_threshold,
                 update,
                 no_browser,
+                cache_backend,
             })
             .map_err(error_to_string)?;
         }

@@ -1,4 +1,5 @@
-use crate::aws_sso::config::UnverifiedSsoConfig;
+use crate::aws_sso::cache::sealed_json::SealedJsonCacheManager;
+use crate::aws_sso::config::{CacheBackend, UnverifiedSsoConfig};
 use crate::utils::private_fs;
 use crate::utils::resolve_config_dir;
 use std::path::PathBuf;
@@ -18,6 +19,7 @@ pub struct ExecInitInputs {
     pub create_token_lock_decay: Option<jiff::SignedDuration>,
     pub account_cache_ttl: Option<jiff::SignedDuration>,
     pub no_browser: Option<bool>,
+    pub cache_backend: Option<CacheBackend>,
 }
 
 fn override_with<T>(field: &mut T, value: Option<T>) {
@@ -61,7 +63,10 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
     } else if let (Some(start_url), Some(sso_region)) =
         (exec_inputs.sso_start_url, exec_inputs.sso_region)
     {
-        UnverifiedSsoConfig::new(start_url, sso_region)
+        // Only a new config gets the keyring; one written without `cacheBackend` keeps the file.
+        let mut sso_config = UnverifiedSsoConfig::new(start_url, sso_region);
+        sso_config.cache_backend = Some(CacheBackend::Keyring);
+        sso_config
     } else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -83,10 +88,24 @@ pub fn exec_init(exec_inputs: ExecInitInputs) -> Result<(), std::io::Error> {
         exec_inputs.account_cache_ttl,
     );
     override_opt(&mut sso_config.no_browser, exec_inputs.no_browser);
+    override_opt(&mut sso_config.cache_backend, exec_inputs.cache_backend);
 
     let sso_config = sso_config
         .verify()
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+
+    if sso_config.cache_backend() == CacheBackend::Keyring {
+        SealedJsonCacheManager::new(&config_dir)
+            .probe_keyring()
+            .map_err(|err| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    format!(
+                        "OS keyring unavailable ({err}); rerun with --cache-backend file to keep the SSO cache in a file instead"
+                    ),
+                )
+            })?;
+    }
 
     if !config_dir_exists || exec_inputs.recreate {
         if config_dir_exists && exec_inputs.recreate {
@@ -136,6 +155,7 @@ mod tests {
             create_token_lock_decay: None,
             account_cache_ttl: None,
             no_browser: None,
+            cache_backend: None,
         }
     }
 
@@ -146,6 +166,7 @@ mod tests {
         let mut args = inputs(&config_dir);
         args.sso_start_url = Some(start_url.to_string());
         args.sso_region = Some(region.to_string());
+        args.cache_backend = Some(CacheBackend::File);
         exec_init(args).expect("initial create should succeed");
         config_dir
     }
@@ -237,11 +258,44 @@ mod tests {
         args.update = true;
         args.create_token_retry_threshold = Some(3);
         args.no_browser = Some(true);
+        args.cache_backend = Some(CacheBackend::File);
         exec_init(args).expect("update should succeed");
 
         let config = config_at(&config_dir);
         assert_eq!(config.create_token_retry_threshold(), 3);
         assert!(config.no_browser());
+        assert_eq!(
+            UnverifiedSsoConfig::from_config_file(&config_dir.join("config.json"))
+                .unwrap()
+                .cache_backend,
+            Some(CacheBackend::File),
+            "the given backend is stored"
+        );
+    }
+
+    #[test]
+    fn update_leaves_a_config_without_a_backend_on_the_file() {
+        let dir = TempDir::new("init-update-legacy-backend");
+        let config_dir = dir.join("cfg");
+        private_fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("config.json"),
+            r#"{"startURL": "https://a.awsapps.com/start", "ssoRegion": "eu-west-2"}"#,
+        )
+        .unwrap();
+
+        let mut args = inputs(&config_dir);
+        args.update = true;
+        args.no_browser = Some(true);
+        exec_init(args).expect("update should succeed");
+
+        assert_eq!(
+            UnverifiedSsoConfig::from_config_file(&config_dir.join("config.json"))
+                .unwrap()
+                .cache_backend,
+            None,
+            "the keyring default is for new configs only"
+        );
     }
 
     #[test]
@@ -255,6 +309,7 @@ mod tests {
         args.recreate = true;
         args.sso_start_url = Some("https://b.awsapps.com/start".to_string());
         args.sso_region = Some("ap-south-1".to_string());
+        args.cache_backend = Some(CacheBackend::File);
         exec_init(args).expect("recreate should succeed");
 
         assert_eq!(

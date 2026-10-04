@@ -51,11 +51,13 @@ pub struct UnverifiedSsoConfig {
     pub cache_backend: Option<CacheBackend>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum CacheBackend {
+    /// Plain JSON in cache.json, readable by anything running as you
     #[default]
     File,
+    /// Sealed in cache.sealed with a key held in the OS keyring
     Keyring,
 }
 
