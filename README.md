@@ -132,9 +132,31 @@ aws-auth batch exec -F -A prod,staging -- ./migrate.sh
 ```
 
 Each child additionally gets `AWS_ACCOUNT_ID`. Accounts that resolve under no role are
-reported on stderr, and the command fails if none resolved at all. `-D <dir>` writes
-per-account `*-stdout.log` / `*-stderr.log`; `-s` discards output; `-d` adds progress
+reported on stderr, and the command fails if none resolved at all. `-d` adds progress
 logging.
+
+`-m`, `--output-mode` sets what reaches the terminal. Children's stdout stays on stdout and
+their stderr on stderr, and outside `raw` they get no stdin:
+
+| Mode | Shows |
+| --- | --- |
+| `group` (default) | Each account's output in one block once it finishes, under a `==> <account> (<role>) ok` header on stderr, so accounts never interleave |
+| `tag` | Every line as it arrives, prefixed with `[<account>]` |
+| `json` | One JSON object per line on stdout for each account once it finishes, with its role, result and output |
+| `raw` | Children share the terminal and its stdin, unprefixed; best with `-p 1` for interactive commands |
+| `none` | Nothing but aws-auth's own warnings |
+
+`-D <dir>` also saves each account's output to `<account>-stdout.log` /
+`<account>-stderr.log`, with any mode but `raw`, and adds a line per account to
+`<dir>/results.jsonl`: `status` is `ok`, `failed`, `skipped` or `unresolved`, with `role`,
+`exit_code` or `error`, and the log file names where they apply.
+
+```sh
+aws-auth batch exec -m tag -r ReadOnly -- aws s3 ls | grep my-bucket
+aws-auth batch exec -m json -r ReadOnly -- aws sts get-caller-identity \
+  | jq -r 'select(.end.status=="ok") | .stdout | fromjson | .Arn'
+aws-auth batch exec -m none -D out -F -A prod,staging -- ./migrate.sh
+```
 
 **Any account whose command fails makes aws-auth exit non-zero**, and each failure is
 named on stderr — unlike `exec`, the exit status is a pass/fail for the run rather than

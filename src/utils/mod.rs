@@ -3,6 +3,7 @@ pub mod expiring;
 pub mod formatters;
 pub mod lockout;
 pub mod private_fs;
+pub mod stdmux;
 #[cfg(test)]
 pub mod test_support;
 pub mod worker;
