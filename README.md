@@ -206,6 +206,7 @@ any of them with `aws-auth init --update`, whose duration flags take values such
 
 ```sh
 aws-auth init --update --retry-interval 10s --create-token-lock-decay 3h --no-browser true
+aws-auth init --update --cache-backend keyring
 ```
 
 Alongside it live `aliases.json` (your aliases), `cache.json` (the SSO session and
@@ -215,7 +216,7 @@ cached role credentials, or `cache.sealed` with the keyring backend),
 
 ## Keyring-protected cache
 
-Set `"cacheBackend": "keyring"` to encrypt the SSO cache with a key held in the OS
+A new config from `aws-auth init` uses the keyring backend, which encrypts the SSO cache with a key held in the OS
 keyring — Keychain on macOS, Credential Manager on Windows, Secret Service on Linux. The
 cache is then written to `cache.sealed` and is unreadable without that key, so a copied
 or backed-up config directory leaks nothing. On macOS only the aws-auth binary that created
@@ -223,9 +224,11 @@ the key can read it silently; a rebuilt or upgraded binary asks once. On Windows
 any process running as you can read it.
 
 If the keyring cannot be reached — over SSH on macOS, or on Linux without a desktop
-session — commands fail before signing in; use `"file"` on such machines. Switching
-backends means one fresh sign-in, and a `cache.json` left from the file backend can be
-deleted.
+session — `init` fails and other commands fail before signing in; pass
+`--cache-backend file` on such machines. A config without `cacheBackend`, such as one
+written before the keyring backend existed, uses the file. Move one over with
+`aws-auth init --update --cache-backend keyring`; switching backends means one fresh
+sign-in, and a `cache.json` left from the file backend can be deleted.
 
 ## Headless hosts
 

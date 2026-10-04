@@ -1,3 +1,4 @@
+use crate::aws_sso::config::CacheBackend;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use jiff::SignedDuration;
 use std::path::PathBuf;
@@ -237,6 +238,13 @@ pub enum Commands {
         /// Pass --no-browser false to turn it back off; omitting it leaves the stored value alone
         #[arg(long, num_args = 0..=1, default_missing_value = "true")]
         no_browser: Option<bool>,
+
+        /// Where the SSO session and cached role credentials are stored
+        /// Init fails if the OS keyring cannot be reached; pass file on such machines.
+        /// Switching backends means one fresh sign-in.
+        /// Default: keyring for a new config; a config without one uses file
+        #[arg(long, value_enum)]
+        cache_backend: Option<CacheBackend>,
     },
 
     #[clap(flatten)]

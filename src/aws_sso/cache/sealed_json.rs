@@ -16,7 +16,7 @@ type Key = chacha20poly1305::Key;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(
-        "OS keyring unavailable ({0}); set \"cacheBackend\" to \"file\" in config.json to use aws-auth on this machine"
+        "OS keyring unavailable ({0}); run `aws-auth init --update --cache-backend file` to use aws-auth on this machine"
     )]
     KeystoreUnavailable(keyring::Error),
     #[error("Error storing the cache key in the OS keyring: {0}")]
@@ -55,21 +55,29 @@ impl SealedJsonCacheManager {
         }
     }
 
-    fn entry(&self) -> Result<&keyring::Entry, Error> {
+    fn entry(&self) -> Result<&keyring::Entry, keyring::Error> {
         if let Some(entry) = self.entry.get() {
             return Ok(entry);
         }
-        let entry = keyring::Entry::new(KEYRING_SERVICE, &self.account)
-            .map_err(Error::KeystoreUnavailable)?;
+        let entry = keyring::Entry::new(KEYRING_SERVICE, &self.account)?;
         Ok(self.entry.get_or_init(|| entry))
     }
 
-    fn stored_key(&self) -> Result<Option<Key>, Error> {
+    fn read_key(&self) -> Result<Option<Key>, keyring::Error> {
         match self.entry()?.get_secret() {
             Ok(secret) => Ok(Key::try_from(secret.as_slice()).ok()),
             Err(keyring::Error::NoEntry) => Ok(None),
-            Err(err) => Err(Error::KeystoreUnavailable(err)),
+            Err(err) => Err(err),
         }
+    }
+
+    fn stored_key(&self) -> Result<Option<Key>, Error> {
+        self.read_key().map_err(Error::KeystoreUnavailable)
+    }
+
+    /// Reaches the keyring without creating a key.
+    pub fn probe_keyring(&self) -> Result<(), keyring::Error> {
+        self.read_key().map(drop)
     }
 
     fn key(&self) -> Result<&Key, Error> {
@@ -80,7 +88,10 @@ impl SealedJsonCacheManager {
             Some(key) => key,
             None => {
                 let key = Key::generate();
-                self.entry()?.set_secret(&key).map_err(Error::Keyring)?;
+                self.entry()
+                    .map_err(Error::KeystoreUnavailable)?
+                    .set_secret(&key)
+                    .map_err(Error::Keyring)?;
                 key
             }
         };
