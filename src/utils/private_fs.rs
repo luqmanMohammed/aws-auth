@@ -87,6 +87,21 @@ pub fn create_replacing(path: &Path) -> io::Result<File> {
         .open(path)
 }
 
+/// Linux creates an unnamed temp file with `O_TMPFILE`, which takes its mode from the umask
+/// rather than from [`tempfile`], so it is tightened through the handle before anything is
+/// written.
+pub fn temp_file() -> io::Result<File> {
+    let file = tempfile::tempfile()?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(FILE_MODE))?;
+    }
+
+    Ok(file)
+}
+
 pub fn create_dir_all(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {

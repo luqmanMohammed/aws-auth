@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::sync::Arc;
 
+use crate::utils::private_fs;
+
 use super::console::{self, LineSplitter};
 use super::finish::FinishedStream;
 use super::replay::Replay;
@@ -21,7 +23,7 @@ impl Storage {
         Ok(match (log, console) {
             (Some(log), _) => Storage::Log(log),
             (None, Some(Console::Grouped { buffer, .. })) => match buffer {
-                GroupBuffer::TempFile => Storage::TempFile(tempfile::tempfile()?),
+                GroupBuffer::TempFile => Storage::TempFile(private_fs::temp_file()?),
                 GroupBuffer::Memory => Storage::Memory(Replay::in_memory()),
             },
             (None, _) => Storage::Nothing,
