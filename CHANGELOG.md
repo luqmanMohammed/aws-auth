@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/luqmanMohammed/aws-auth/compare/v0.5.0...v0.6.0) - 2026-10-09
+
+### Added
+
+- add init --cache-backend, defaulting new configs to the keyring and failing init when it is unreachable
+- add batch exec --output-mode with group, tag, json, raw and none, and record per-account results in results.jsonl
+
+### Dependencies
+
+- *(deps)* bump aws-smithy-runtime-api
+
+### Fixed
+
+- drop the unused mut in owner_only on windows
+- make the grouped output temp file owner-only on linux
+
 ## [0.5.0](https://github.com/luqmanMohammed/aws-auth/compare/v0.4.0...v0.5.0) - 2026-09-27
 
 ### Added
